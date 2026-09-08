@@ -1,0 +1,40 @@
+[project]
+name = "lean-eval-toolkit"
+version = "0.1.0"
+description = "Evaluate remote language models on Lean theorem-proving benchmarks"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "axiom-axle>=1.7.0,<2",
+    "httpx>=0.28.1,<1",
+    "pydantic>=2.11,<3",
+    "pydantic-settings>=2.10,<3",
+    "rich>=14.0,<15",
+    "typer>=0.16,<1",
+]
+
+[project.scripts]
+lean-eval = "lean_eval_toolkit.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<9",
+    "pytest-asyncio>=1.1,<2",
+    "respx>=0.22,<1",
+    "ruff>=0.12,<1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
