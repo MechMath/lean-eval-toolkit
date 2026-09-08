@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
+from lean_eval_toolkit.cli import app
 from lean_eval_toolkit.datasets import DatasetError, load_dataset, write_jsonl
 
 
@@ -67,3 +69,11 @@ def test_round_trip_normalized_jsonl(tmp_path: Path) -> None:
     assert loaded.id == "sample"
     assert loaded.dataset == "manual"
     assert loaded.split == "dev"
+
+
+def test_cli_lists_built_in_datasets() -> None:
+    result = CliRunner().invoke(app, ["datasets", "list"])
+
+    assert result.exit_code == 0
+    assert "minif2f" in result.stdout
+    assert "putnambench" in result.stdout

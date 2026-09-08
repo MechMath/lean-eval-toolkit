@@ -137,7 +137,7 @@ class RunWriter:
     """Stream results to disk so interrupted evaluations retain completed attempts."""
 
     def __init__(self, settings: Settings, *, dataset_source: Path):
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         model_slug = (settings.model_name or "unknown-model").replace("/", "-")
         self.directory = settings.eval_results_dir / f"{stamp}-{model_slug}"
         self.directory.mkdir(parents=True, exist_ok=False)
