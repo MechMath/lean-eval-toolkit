@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,9 @@ BUILTIN_DATASETS: dict[str, dict[str, str]] = {
 _ID_KEYS = ("id", "name", "problem_id")
 _FORMAL_KEYS = ("formal_statement", "statement", "code", "formal")
 _INFORMAL_KEYS = ("informal_statement", "nl_statement", "problem", "informal")
+_MINIF2F_THEOREM = re.compile(
+    r"(?ms)^theorem\s+(?P<name>[A-Za-z0-9_']+)\b.*?^\s+sorry\s*$"
+)
 
 
 def _first(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -116,6 +120,34 @@ def _lean_files(source: Path, dataset: str) -> list[Path]:
     return sorted(source.rglob("*.lean"))
 
 
+def _minif2f_problems(path: Path, *, base: Path) -> Iterator[LeanProblem]:
+    """Split the upstream aggregate Valid/Test files into independent tasks."""
+    content = path.read_text(encoding="utf-8")
+    matches = list(_MINIF2F_THEOREM.finditer(content))
+    if len(matches) <= 1:
+        return
+    first_start = matches[0].start()
+    prelude_end = content.rfind("/--", 0, first_start)
+    prelude = content[: prelude_end if prelude_end >= 0 else first_start].rstrip()
+    relative = path.relative_to(base)
+    split = _infer_split(relative)
+    for match in matches:
+        before = content[: match.start()]
+        doc_start = before.rfind("/--")
+        doc_end = before.rfind("-/")
+        informal = None
+        if doc_start >= 0 and doc_end > doc_start and not before[doc_end + 2 :].strip():
+            informal = before[doc_start + 3 : doc_end].strip()
+        yield LeanProblem(
+            id=match.group("name"),
+            dataset="minif2f",
+            split=split,
+            formal_statement=f"{prelude}\n\n{match.group(0).strip()}\n",
+            informal_statement=informal,
+            metadata={"source_path": relative.as_posix()},
+        )
+
+
 def load_lean_files(
     source: Path, *, dataset: str, split: str | None = None
 ) -> Iterator[LeanProblem]:
@@ -125,6 +157,11 @@ def load_lean_files(
         raise DatasetError(f"no .lean files found under {source}")
     base = source if source.is_dir() else source.parent
     for path in files:
+        if dataset == "minif2f" and path.stem.lower() in {"valid", "test"}:
+            aggregate = list(_minif2f_problems(path, base=base))
+            if aggregate:
+                yield from aggregate
+                continue
         content = path.read_text(encoding="utf-8")
         if "sorry" not in content:
             continue

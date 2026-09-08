@@ -46,6 +46,30 @@ def test_loads_putnambench_checkout_layout(tmp_path: Path) -> None:
     assert problem.metadata["source_path"] == "lean4/src/putnam_2024_a1.lean"
 
 
+def test_splits_upstream_minif2f_aggregate(tmp_path: Path) -> None:
+    source = tmp_path / "MiniF2F"
+    source.mkdir()
+    (source / "Test.lean").write_text(
+        """import MiniF2F.ProblemImports
+open scoped Nat
+/-- First problem. -/
+theorem first : True := by
+  sorry
+/-- Second problem. -/
+theorem second : 1 = 1 := by
+  sorry
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_dataset(tmp_path, dataset="minif2f")
+
+    assert [problem.id for problem in loaded] == ["first", "second"]
+    assert all(problem.split == "test" for problem in loaded)
+    assert loaded[0].informal_statement == "First problem."
+    assert "theorem second" not in loaded[0].formal_statement
+
+
 def test_rejects_statement_without_sorry(tmp_path: Path) -> None:
     source = tmp_path / "tasks.jsonl"
     source.write_text(

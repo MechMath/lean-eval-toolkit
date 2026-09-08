@@ -14,4 +14,5 @@ wheels/
 
 # Local configuration and generated evaluations
 .env
+data/
 results/

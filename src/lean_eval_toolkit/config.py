@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     axle_api_url: str = "https://axle.axiommath.ai"
     axle_api_key: SecretStr = SecretStr("")
-    axle_environment: str = "lean-4.32.0"
+    axle_environment: str = "lean-4.27.0"
     axle_timeout_seconds: float = Field(default=900, gt=0, le=900)
 
     eval_concurrency: int = Field(default=4, gt=0)
