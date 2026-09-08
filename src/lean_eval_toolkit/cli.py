@@ -122,6 +122,9 @@ def run_evaluation(
     ],
     name: Annotated[str, typer.Option("--name", help="Dataset name.")] = "custom",
     split: Annotated[str | None, typer.Option(help="Only evaluate this split.")] = None,
+    problem_ids: Annotated[
+        list[str] | None, typer.Option("--id", help="Only evaluate this problem ID; repeatable.")
+    ] = None,
     limit: Annotated[int | None, typer.Option(min=1, help="Evaluate at most N problems.")] = None,
     attempts: Annotated[
         int | None, typer.Option(min=1, help="Attempts per problem; overrides EVAL_ATTEMPTS.")
@@ -143,6 +146,9 @@ def run_evaluation(
         raise typer.Exit(2) from exc
     if split:
         problems = [problem for problem in problems if problem.split == split]
+    if problem_ids:
+        requested = set(problem_ids)
+        problems = [problem for problem in problems if problem.id in requested]
     if limit:
         problems = problems[:limit]
     if not problems:

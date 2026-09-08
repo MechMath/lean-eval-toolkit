@@ -75,3 +75,27 @@ async def test_reports_model_http_error(problem: LeanProblem) -> None:
     async with OpenAICompatibleClient(settings, transport=transport) as client:
         with pytest.raises(ModelError, match="HTTP 401"):
             await client.generate(problem)
+
+
+@pytest.mark.asyncio
+async def test_reports_empty_reasoning_response_without_exposing_reasoning(
+    problem: LeanProblem,
+) -> None:
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {"content": "", "reasoning_content": "private chain of thought"},
+                        "finish_reason": "length",
+                    }
+                ]
+            },
+        )
+    )
+    settings = Settings(_env_file=None, model_name="prover")
+    async with OpenAICompatibleClient(settings, transport=transport) as client:
+        with pytest.raises(ModelError, match=r"finish_reason='length'.*reasoning_chars=24") as exc:
+            await client.generate(problem)
+    assert "private chain" not in str(exc.value)

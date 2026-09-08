@@ -31,6 +31,8 @@ def test_run_command_wires_dataset_and_cli_overrides(
             "manual",
             "--attempts",
             "2",
+            "--id",
+            "task",
             "--concurrency",
             "1",
             "--results-dir",

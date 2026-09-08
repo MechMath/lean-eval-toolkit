@@ -137,6 +137,13 @@ uv run lean-eval run data/putnambench/problems.jsonl --name putnambench \
   --attempts 4 --concurrency 4
 ```
 
+可用可重复的 `--id` 精确选择题目：
+
+```bash
+uv run lean-eval run data/putnambench/problems.jsonl \
+  --name putnambench --id putnam_1968_a1
+```
+
 CLI 参数优先于 `.env` 中的 `EVAL_ATTEMPTS`、`EVAL_CONCURRENCY` 和 `EVAL_RESULTS_DIR`。
 `--attempts k` 会为每题独立生成 k 个候选，并报告经验 pass@k（至少一个候选通过的题目比例）。
 

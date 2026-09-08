@@ -117,7 +117,8 @@ class OpenAICompatibleClient:
             raise ModelError(f"model API request failed: {exc}") from exc
         try:
             choice = data["choices"][0]
-            raw_content = _message_text(choice["message"]["content"])
+            message = choice["message"]
+            raw_content = _message_text(message["content"])
         except (KeyError, IndexError, TypeError) as exc:
             raise ModelError("model API returned an invalid chat-completions response") from exc
         usage = {
@@ -125,6 +126,14 @@ class OpenAICompatibleClient:
             for key, value in (data.get("usage") or {}).items()
             if isinstance(key, str) and isinstance(value, int)
         }
+        if not raw_content.strip():
+            reasoning = message.get("reasoning_content")
+            reasoning_chars = len(reasoning) if isinstance(reasoning, str) else 0
+            raise ModelError(
+                "model returned an empty final response "
+                f"(finish_reason={choice.get('finish_reason')!r}, "
+                f"reasoning_chars={reasoning_chars})"
+            )
         return Generation(
             content=extract_lean_code(raw_content),
             raw_content=raw_content,
