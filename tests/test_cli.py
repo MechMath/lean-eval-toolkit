@@ -51,6 +51,7 @@ def test_run_command_explains_missing_model_name(
 ) -> None:
     source = tmp_path / "task.lean"
     source.write_text("theorem task : True := by sorry\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("MODEL_NAME", raising=False)
 
     result = CliRunner().invoke(app, ["run", str(source)])

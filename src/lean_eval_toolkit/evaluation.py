@@ -136,7 +136,9 @@ async def evaluate(
 class RunWriter:
     """Stream results to disk so interrupted evaluations retain completed attempts."""
 
-    def __init__(self, settings: Settings, *, dataset_source: Path):
+    def __init__(
+        self, settings: Settings, *, dataset_source: Path, problems: Sequence[LeanProblem]
+    ):
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         model_slug = (settings.model_name or "unknown-model").replace("/", "-")
         self.directory = settings.eval_results_dir / f"{stamp}-{model_slug}"
@@ -149,7 +151,14 @@ class RunWriter:
             "model_name": settings.model_name,
             "model_base_url": settings.model_base_url,
             "axle_api_url": settings.axle_api_url,
-            "axle_environment": settings.axle_environment,
+            "axle_environment_fallback": settings.axle_environment,
+            "dataset_environments": sorted(
+                {
+                    environment
+                    for problem in problems
+                    if (environment := problem.environment or settings.axle_environment)
+                }
+            ),
             "attempts": settings.eval_attempts,
             "concurrency": settings.eval_concurrency,
         }

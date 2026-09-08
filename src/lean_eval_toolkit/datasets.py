@@ -25,6 +25,7 @@ class LeanProblem(BaseModel):
     split: str = "custom"
     formal_statement: str = Field(min_length=1)
     informal_statement: str | None = None
+    environment: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("formal_statement")
@@ -40,17 +41,20 @@ BUILTIN_DATASETS: dict[str, dict[str, str]] = {
         "description": "Olympiad-level miniF2F problems translated to Lean 4",
         "upstream": "https://github.com/google-deepmind/miniF2F",
         "layout": "JSONL export or a checkout containing MiniF2F/Valid.lean and Test.lean",
+        "fallback_environment": "lean-4.27.0",
     },
     "putnambench": {
         "description": "Putnam competition problems formalized in Lean 4",
         "upstream": "https://github.com/trishullab/PutnamBench",
         "layout": "Repository checkout; Lean tasks are read from lean4/src/*.lean",
+        "fallback_environment": "lean-4.27.0",
     },
 }
 
 _ID_KEYS = ("id", "name", "problem_id")
 _FORMAL_KEYS = ("formal_statement", "statement", "code", "formal")
 _INFORMAL_KEYS = ("informal_statement", "nl_statement", "problem", "informal")
+_ENVIRONMENT_KEYS = ("environment", "lean_environment", "axle_environment")
 _MINIF2F_THEOREM = re.compile(
     r"(?ms)^theorem\s+(?P<name>[A-Za-z0-9_']+)\b.*?^\s+sorry\s*$"
 )
@@ -70,7 +74,15 @@ def _normalize_record(
             f"record {line_number} needs string fields `id` and `formal_statement` "
             f"(accepted aliases: {_ID_KEYS} and {_FORMAL_KEYS})"
         )
-    known = {*_ID_KEYS, *_FORMAL_KEYS, *_INFORMAL_KEYS, "dataset", "split", "metadata"}
+    known = {
+        *_ID_KEYS,
+        *_FORMAL_KEYS,
+        *_INFORMAL_KEYS,
+        *_ENVIRONMENT_KEYS,
+        "dataset",
+        "split",
+        "metadata",
+    }
     metadata = dict(record.get("metadata") or {})
     metadata.update({key: value for key, value in record.items() if key not in known})
     try:
@@ -80,6 +92,7 @@ def _normalize_record(
             split=str(record.get("split") or default_split),
             formal_statement=formal,
             informal_statement=_first(record, _INFORMAL_KEYS),
+            environment=_first(record, _ENVIRONMENT_KEYS),
             metadata=metadata,
         )
     except ValidationError as exc:
@@ -120,7 +133,28 @@ def _lean_files(source: Path, dataset: str) -> list[Path]:
     return sorted(source.rglob("*.lean"))
 
 
-def _minif2f_problems(path: Path, *, base: Path) -> Iterator[LeanProblem]:
+def _parse_toolchain(path: Path) -> str | None:
+    match = re.search(r"lean4:v?(\d+\.\d+\.\d+(?:-rc\d+)?)", path.read_text(encoding="utf-8"))
+    return f"lean-{match.group(1)}" if match else None
+
+
+def _infer_environment(source: Path, dataset: str) -> tuple[str | None, str]:
+    root = source if source.is_dir() else source.parent
+    candidates = [root / "lean-toolchain"]
+    if dataset == "putnambench":
+        candidates.insert(0, root / "lean4" / "lean-toolchain")
+    for parent in list(root.parents)[:3]:
+        candidates.append(parent / "lean-toolchain")
+    for candidate in candidates:
+        if candidate.is_file() and (environment := _parse_toolchain(candidate)):
+            return environment, str(candidate)
+    fallback = BUILTIN_DATASETS.get(dataset, {}).get("fallback_environment")
+    return fallback, "built-in fallback" if fallback else "unspecified"
+
+
+def _minif2f_problems(
+    path: Path, *, base: Path, environment: str | None, environment_source: str
+) -> Iterator[LeanProblem]:
     """Split the upstream aggregate Valid/Test files into independent tasks."""
     content = path.read_text(encoding="utf-8")
     matches = list(_MINIF2F_THEOREM.finditer(content))
@@ -144,7 +178,11 @@ def _minif2f_problems(path: Path, *, base: Path) -> Iterator[LeanProblem]:
             split=split,
             formal_statement=f"{prelude}\n\n{match.group(0).strip()}\n",
             informal_statement=informal,
-            metadata={"source_path": relative.as_posix()},
+            environment=environment,
+            metadata={
+                "source_path": relative.as_posix(),
+                "environment_source": environment_source,
+            },
         )
 
 
@@ -156,9 +194,17 @@ def load_lean_files(
     if not files:
         raise DatasetError(f"no .lean files found under {source}")
     base = source if source.is_dir() else source.parent
+    environment, environment_source = _infer_environment(source, dataset)
     for path in files:
         if dataset == "minif2f" and path.stem.lower() in {"valid", "test"}:
-            aggregate = list(_minif2f_problems(path, base=base))
+            aggregate = list(
+                _minif2f_problems(
+                    path,
+                    base=base,
+                    environment=environment,
+                    environment_source=environment_source,
+                )
+            )
             if aggregate:
                 yield from aggregate
                 continue
@@ -171,7 +217,11 @@ def load_lean_files(
             dataset=dataset,
             split=split or _infer_split(relative),
             formal_statement=content,
-            metadata={"source_path": relative.as_posix()},
+            environment=environment,
+            metadata={
+                "source_path": relative.as_posix(),
+                "environment_source": environment_source,
+            },
         )
 
 

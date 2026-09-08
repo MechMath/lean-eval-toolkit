@@ -71,7 +71,7 @@ async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
         eval_results_dir=tmp_path,
         eval_attempts=1,
     )
-    writer = RunWriter(settings, dataset_source=Path("tasks.jsonl"))
+    writer = RunWriter(settings, dataset_source=Path("tasks.jsonl"), problems=problems()[:1])
     results, summary = await evaluate(
         problems()[:1], FakeGenerator(), FakeVerifier(), attempts=1, concurrency=1,
         on_result=writer.append,

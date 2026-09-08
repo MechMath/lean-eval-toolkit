@@ -84,7 +84,7 @@ async def _run_evaluation(
     progress: Progress,
     progress_task: int,
 ) -> tuple[Path, float, int, int]:
-    writer = RunWriter(settings, dataset_source=source)
+    writer = RunWriter(settings, dataset_source=source, problems=problems)
 
     async def report(result: AttemptResult) -> None:
         progress.update(

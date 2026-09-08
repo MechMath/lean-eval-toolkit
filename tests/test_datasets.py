@@ -33,8 +33,12 @@ def test_loads_common_minif2f_jsonl_shape(tmp_path: Path) -> None:
 
 
 def test_loads_putnambench_checkout_layout(tmp_path: Path) -> None:
-    source = tmp_path / "PutnamBench" / "lean4" / "src"
+    checkout = tmp_path / "PutnamBench"
+    source = checkout / "lean4" / "src"
     source.mkdir(parents=True)
+    (checkout / "lean4" / "lean-toolchain").write_text(
+        "leanprover/lean4:v4.26.0\n", encoding="utf-8"
+    )
     (source / "putnam_2024_a1.lean").write_text(
         "import Mathlib\n theorem putnam_2024_a1 : True := by sorry\n", encoding="utf-8"
     )
@@ -44,6 +48,8 @@ def test_loads_putnambench_checkout_layout(tmp_path: Path) -> None:
 
     assert problem.id == "lean4/src/putnam_2024_a1"
     assert problem.metadata["source_path"] == "lean4/src/putnam_2024_a1.lean"
+    assert problem.environment == "lean-4.26.0"
+    assert problem.metadata["environment_source"].endswith("lean4/lean-toolchain")
 
 
 def test_splits_upstream_minif2f_aggregate(tmp_path: Path) -> None:
@@ -68,6 +74,7 @@ theorem second : 1 = 1 := by
     assert all(problem.split == "test" for problem in loaded)
     assert loaded[0].informal_statement == "First problem."
     assert "theorem second" not in loaded[0].formal_statement
+    assert loaded[0].environment == "lean-4.27.0"
 
 
 def test_rejects_statement_without_sorry(tmp_path: Path) -> None:

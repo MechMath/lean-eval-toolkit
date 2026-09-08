@@ -50,12 +50,12 @@ MODEL_EXTRA_BODY={"top_p":0.95}
 MODEL_EXTRA_HEADERS={"X-Custom-Header":"value"}
 ```
 
-AXLE 默认使用与当前 miniF2F 和 PutnamBench 上游一致的 Lean 4.27 环境：
+Lean 环境由每条数据记录决定，`.env` 只为没有版本信息的手动题目提供回退：
 
 ```dotenv
 AXLE_API_URL=https://axle.axiommath.ai
 AXLE_API_KEY=
-AXLE_ENVIRONMENT=lean-4.27.0
+AXLE_ENVIRONMENT=
 AXLE_TIMEOUT_SECONDS=900
 ```
 
@@ -89,10 +89,13 @@ uv run lean-eval datasets import data/PutnamBench \
 也可以不预先生成 JSONL，直接把仓库目录传给 `lean-eval run`。规范化 JSONL 每行格式如下：
 
 ```json
-{"id":"demo","dataset":"manual","split":"dev","formal_statement":"import Mathlib\ntheorem demo : True := by\n  sorry\n","informal_statement":"证明 True。","metadata":{}}
+{"id":"demo","dataset":"manual","split":"dev","environment":"lean-4.27.0","formal_statement":"import Mathlib\ntheorem demo : True := by\n  sorry\n","informal_statement":"证明 True。","metadata":{}}
 ```
 
-必填字段是 `id` 与包含至少一个 `sorry` 的 `formal_statement`。加载器也接受常见别名，例如
+必填字段是 `id` 与包含至少一个 `sorry` 的 `formal_statement`。建议同时显式填写 AXLE
+环境名格式的 `environment`。从仓库目录导入时，工具会读取 `lean-toolchain` 并把例如
+`leanprover/lean4:v4.27.0` 固定为 `lean-4.27.0`；内置数据集在缺少该文件时使用已知版本回退。
+加载器也接受常见别名，例如
 `name`、`statement`、`code`、`nl_statement`；未识别字段会保存在 `metadata`。对于目录，每个含
 `sorry` 的 `.lean` 文件会成为一个任务，因此可以直接手动添加题目：
 

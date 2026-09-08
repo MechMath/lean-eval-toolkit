@@ -49,10 +49,16 @@ class AxleVerifier:
         await self._client.close()
 
     async def verify(self, problem: LeanProblem, candidate: str) -> Verification:
+        environment = problem.environment or self.settings.axle_environment
+        if not environment:
+            raise ValueError(
+                f"problem {problem.id!r} has no Lean environment; add an `environment` field, "
+                "a lean-toolchain file, or AXLE_ENVIRONMENT fallback"
+            )
         result = await self._client.verify_proof(
             formal_statement=problem.formal_statement,
             content=candidate,
-            environment=self.settings.axle_environment,
+            environment=environment,
             # Never permit benchmark placeholders in a successful candidate.
             permitted_sorries=[],
             timeout_seconds=self.settings.axle_timeout_seconds,
