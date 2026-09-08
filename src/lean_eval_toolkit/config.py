@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     model_timeout_seconds: float = Field(default=300, gt=0)
     model_max_tokens: int = Field(default=4096, gt=0)
     model_temperature: float = Field(default=0, ge=0)
+    model_extra_body: dict[str, object] = Field(default_factory=dict)
+    model_extra_headers: dict[str, str] = Field(default_factory=dict)
 
     axle_api_url: str = "https://axle.axiommath.ai"
     axle_api_key: SecretStr = SecretStr("")
