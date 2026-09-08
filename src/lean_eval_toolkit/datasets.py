@@ -56,8 +56,9 @@ _FORMAL_KEYS = ("formal_statement", "statement", "code", "formal")
 _INFORMAL_KEYS = ("informal_statement", "nl_statement", "problem", "informal")
 _ENVIRONMENT_KEYS = ("environment", "lean_environment", "axle_environment")
 _MINIF2F_THEOREM = re.compile(
-    r"(?ms)^theorem\s+(?P<name>[A-Za-z0-9_']+)\b.*?^\s+sorry\s*$"
+    r"(?m)^theorem\s+(?P<name>[A-Za-z0-9_'.]+)\b"
 )
+_SORRY_LINE = re.compile(r"(?m)^\s+sorry\s*$")
 
 
 def _first(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -130,7 +131,12 @@ def _lean_files(source: Path, dataset: str) -> list[Path]:
         return [source]
     if dataset == "putnambench" and (source / "lean4" / "src").is_dir():
         source = source / "lean4" / "src"
-    return sorted(source.rglob("*.lean"))
+    files = sorted(source.rglob("*.lean"))
+    if dataset == "minif2f":
+        aggregates = [path for path in files if path.stem.lower() in {"valid", "test"}]
+        if aggregates:
+            return aggregates
+    return files
 
 
 def _parse_toolchain(path: Path) -> str | None:
@@ -147,7 +153,11 @@ def _infer_environment(source: Path, dataset: str) -> tuple[str | None, str]:
         candidates.append(parent / "lean-toolchain")
     for candidate in candidates:
         if candidate.is_file() and (environment := _parse_toolchain(candidate)):
-            return environment, str(candidate)
+            try:
+                source_name = candidate.relative_to(root).as_posix()
+            except ValueError:
+                source_name = str(candidate)
+            return environment, source_name
     fallback = BUILTIN_DATASETS.get(dataset, {}).get("fallback_environment")
     return fallback, "built-in fallback" if fallback else "unspecified"
 
@@ -165,7 +175,13 @@ def _minif2f_problems(
     prelude = content[: prelude_end if prelude_end >= 0 else first_start].rstrip()
     relative = path.relative_to(base)
     split = _infer_split(relative)
-    for match in matches:
+    for index, match in enumerate(matches):
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+        declaration = content[match.start() : next_start]
+        sorry_lines = list(_SORRY_LINE.finditer(declaration))
+        if not sorry_lines:
+            continue
+        declaration = declaration[: sorry_lines[-1].end()].strip()
         before = content[: match.start()]
         doc_start = before.rfind("/--")
         doc_end = before.rfind("-/")
@@ -176,7 +192,7 @@ def _minif2f_problems(
             id=match.group("name"),
             dataset="minif2f",
             split=split,
-            formal_statement=f"{prelude}\n\n{match.group(0).strip()}\n",
+            formal_statement=f"{prelude}\n\n{declaration}\n",
             informal_statement=informal,
             environment=environment,
             metadata={
@@ -194,6 +210,8 @@ def load_lean_files(
     if not files:
         raise DatasetError(f"no .lean files found under {source}")
     base = source if source.is_dir() else source.parent
+    if dataset == "putnambench" and (base / "lean4" / "src").is_dir():
+        base = base / "lean4" / "src"
     environment, environment_source = _infer_environment(source, dataset)
     for path in files:
         if dataset == "minif2f" and path.stem.lower() in {"valid", "test"}:
@@ -215,7 +233,7 @@ def load_lean_files(
         yield LeanProblem(
             id=relative.with_suffix("").as_posix(),
             dataset=dataset,
-            split=split or _infer_split(relative),
+            split=split or ("test" if dataset == "putnambench" else _infer_split(relative)),
             formal_statement=content,
             environment=environment,
             metadata={
@@ -237,10 +255,11 @@ def load_dataset(
         problems = list(load_lean_files(source, dataset=dataset, split=split))
     if not problems:
         raise DatasetError(f"no problems containing `sorry` found in {source}")
-    ids = [problem.id for problem in problems]
-    duplicates = sorted({problem_id for problem_id in ids if ids.count(problem_id) > 1})
+    keys = [(problem.dataset, problem.split, problem.id) for problem in problems]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
     if duplicates:
-        raise DatasetError(f"duplicate problem ids: {', '.join(duplicates[:5])}")
+        rendered = ["/".join(key) for key in duplicates[:5]]
+        raise DatasetError(f"duplicate problem keys: {', '.join(rendered)}")
     return problems
 
 

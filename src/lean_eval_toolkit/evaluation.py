@@ -121,7 +121,9 @@ async def evaluate(
         for attempt in range(1, attempts + 1)
     ]
     results = list(await asyncio.gather(*tasks))
-    solved = {result.problem_id for result in results if result.passed}
+    solved = {
+        (result.dataset, result.split, result.problem_id) for result in results if result.passed
+    }
     summary = EvaluationSummary(
         problems=len(problems),
         attempts_per_problem=attempts,

@@ -14,5 +14,5 @@ wheels/
 
 # Local configuration and generated evaluations
 .env
-data/
+data/.upstream-*/
 results/

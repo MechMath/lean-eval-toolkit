@@ -11,6 +11,9 @@ Lean 文件，并使用 [AXLE（Axiom Lean Engine）](https://github.com/AxiomMa
 - [PutnamBench](https://github.com/trishullab/PutnamBench)：自动读取 `lean4/src/*.lean`；
 - 自定义 JSONL、单个 `.lean` 文件或包含 `.lean` 文件的目录。
 
+仓库已经固定并提交两个上游数据集的规范化快照，版本、原作者、转换规则和许可证记录在
+[`data/README.md`](data/README.md)。因此常规评测不需要另行下载数据。
+
 模型接口采用 OpenAI-compatible `chat/completions` 协议，可连接 vLLM、DeepSeek、OpenAI、
 OpenRouter 等兼容端点。原生 Anthropic Messages 等非兼容协议暂未直接支持，可在前方部署兼容网关。
 
@@ -23,7 +26,8 @@ uv sync --all-groups
 cp .env.example .env
 ```
 
-所有凭据和运行参数均由 `.env` 管理；`.env`、`data/` 和 `results/` 不会提交到 Git。
+所有凭据和运行参数均由 `.env` 管理；`.env`、上游临时 checkout 和 `results/` 不会提交到
+Git。`data/*/problems.jsonl` 是经过审计并固定版本的项目输入，会正常提交。
 
 ## 配置模型
 
@@ -62,7 +66,16 @@ AXLE_TIMEOUT_SECONDS=900
 AXLE 官方名称与环境变量拼写都是 `AXLE`；PyPI 发行包叫 `axiom-axle`，Python 导入名为
 `axle`。API key 在允许匿名调用的服务上可以留空。
 
-## 准备数据集
+## 使用内置数据集
+
+直接评测仓库内的固定快照：
+
+```bash
+uv run lean-eval run data/minif2f/problems.jsonl --name minif2f --split test --limit 1
+uv run lean-eval run data/putnambench/problems.jsonl --name putnambench --limit 1
+```
+
+## 更新或添加数据集
 
 查看支持的上游布局：
 
@@ -70,23 +83,24 @@ AXLE 官方名称与环境变量拼写都是 `AXLE`；PyPI 发行包叫 `axiom-a
 uv run lean-eval datasets list
 ```
 
-miniF2F：
+如需从新版上游重新生成 miniF2F：
 
 ```bash
-git clone https://github.com/google-deepmind/miniF2F data/miniF2F
-uv run lean-eval datasets import data/miniF2F \
-  --name minif2f --output data/minif2f.jsonl
+git clone https://github.com/google-deepmind/miniF2F data/.upstream-minif2f
+uv run lean-eval datasets import data/.upstream-minif2f \
+  --name minif2f --output data/minif2f/problems.jsonl
 ```
 
 PutnamBench：
 
 ```bash
-git clone https://github.com/trishullab/PutnamBench data/PutnamBench
-uv run lean-eval datasets import data/PutnamBench \
-  --name putnambench --output data/putnambench.jsonl
+git clone https://github.com/trishullab/PutnamBench data/.upstream-putnambench
+uv run lean-eval datasets import data/.upstream-putnambench \
+  --name putnambench --output data/putnambench/problems.jsonl
 ```
 
-也可以不预先生成 JSONL，直接把仓库目录传给 `lean-eval run`。规范化 JSONL 每行格式如下：
+也可以不预先生成 JSONL，直接把仓库目录传给 `lean-eval run`。更新已提交快照时，必须同步
+更新对应 `PROVENANCE.md` 的 commit、题数、日期和 SHA-256。规范化 JSONL 每行格式如下：
 
 ```json
 {"id":"demo","dataset":"manual","split":"dev","environment":"lean-4.27.0","formal_statement":"import Mathlib\ntheorem demo : True := by\n  sorry\n","informal_statement":"证明 True。","metadata":{}}
@@ -112,14 +126,14 @@ theorem my_problem (n : ℕ) : n = n := by
 先用一题确认模型和 AXLE 配置：
 
 ```bash
-uv run lean-eval run data/minif2f.jsonl --name minif2f --split test --limit 1
+uv run lean-eval run data/minif2f/problems.jsonl --name minif2f --split test --limit 1
 ```
 
 再运行完整评测：
 
 ```bash
-uv run lean-eval run data/minif2f.jsonl --name minif2f --split test
-uv run lean-eval run data/putnambench.jsonl --name putnambench \
+uv run lean-eval run data/minif2f/problems.jsonl --name minif2f --split test
+uv run lean-eval run data/putnambench/problems.jsonl --name putnambench \
   --attempts 4 --concurrency 4
 ```
 

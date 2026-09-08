@@ -46,10 +46,11 @@ def test_loads_putnambench_checkout_layout(tmp_path: Path) -> None:
 
     [problem] = load_dataset(tmp_path / "PutnamBench", dataset="putnambench")
 
-    assert problem.id == "lean4/src/putnam_2024_a1"
-    assert problem.metadata["source_path"] == "lean4/src/putnam_2024_a1.lean"
+    assert problem.id == "putnam_2024_a1"
+    assert problem.split == "test"
+    assert problem.metadata["source_path"] == "putnam_2024_a1.lean"
     assert problem.environment == "lean-4.26.0"
-    assert problem.metadata["environment_source"].endswith("lean4/lean-toolchain")
+    assert problem.metadata["environment_source"] == "lean4/lean-toolchain"
 
 
 def test_splits_upstream_minif2f_aggregate(tmp_path: Path) -> None:
@@ -100,6 +101,19 @@ def test_round_trip_normalized_jsonl(tmp_path: Path) -> None:
     assert loaded.id == "sample"
     assert loaded.dataset == "manual"
     assert loaded.split == "dev"
+
+
+def test_allows_same_problem_id_in_different_splits(tmp_path: Path) -> None:
+    source = tmp_path / "tasks.jsonl"
+    records = [
+        {"id": "same", "split": split, "formal_statement": "theorem same : True := by sorry"}
+        for split in ("validation", "test")
+    ]
+    source.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+
+    loaded = load_dataset(source, dataset="minif2f")
+
+    assert len(loaded) == 2
 
 
 def test_cli_lists_built_in_datasets() -> None:
