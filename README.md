@@ -1,37 +1,47 @@
 # Lean Eval Toolkit
 
-通过远程 API 评测语言模型解决 Lean 4 数学题的能力。工具负责读取题目、请求模型、提取完整
-Lean 文件，并使用 [AXLE（Axiom Lean Engine）](https://github.com/AxiomMath/axiom-lean-engine)
-逐个验证候选证明。启动或托管待测模型不属于本项目范围。
+[中文说明](README_ch.md)
 
-目前支持：
+Lean Eval Toolkit evaluates the mathematical theorem-proving ability of remote language models
+on Lean 4 benchmarks. It sends each problem to an OpenAI-compatible chat-completions endpoint,
+extracts a complete Lean source file, and verifies the candidate with
+[AXLE (Axiom Lean Engine)](https://github.com/AxiomMath/axiom-lean-engine).
 
-- [miniF2F Lean 4](https://github.com/google-deepmind/miniF2F)：自动拆分上游的
-  `MiniF2F/Valid.lean` 和 `MiniF2F/Test.lean`；
-- [PutnamBench](https://github.com/trishullab/PutnamBench)：自动读取 `lean4/src/*.lean`；
-- 自定义 JSONL、单个 `.lean` 文件或包含 `.lean` 文件的目录。
+Starting or hosting the model is outside this project's scope. The endpoint may be a local model
+served by vLLM or a compatible commercial API such as DeepSeek, OpenAI, or OpenRouter.
 
-仓库已经固定并提交两个上游数据集的规范化快照，版本、原作者、转换规则和许可证记录在
-[`data/README.md`](data/README.md)。因此常规评测不需要另行下载数据。
+## Features
 
-模型接口采用 OpenAI-compatible `chat/completions` 协议，可连接 vLLM、DeepSeek、OpenAI、
-OpenRouter 等兼容端点。原生 Anthropic Messages 等非兼容协议暂未直接支持，可在前方部署兼容网关。
+- Versioned miniF2F and PutnamBench JSONL snapshots committed in `data/`.
+- Per-problem Lean environments; benchmark versions never depend on one global `.env` value.
+- Importers for benchmark checkouts, JSONL files, individual `.lean` files, and Lean directories.
+- Concurrent generation, multiple attempts, problem-ID and split filters, and empirical pass@k.
+- Strict AXLE `verify_proof` acceptance with no permitted `sorry` declarations.
+- Streamed run artifacts containing model output, token usage, errors, and verification details.
 
-## 安装
+## Included datasets
 
-需要 Python 3.12 与 [uv](https://docs.astral.sh/uv/)：
+| Dataset | Tasks | Split | Lean environment |
+| --- | ---: | --- | --- |
+| miniF2F | 498 | 256 validation, 242 test | `lean-4.27.0` |
+| PutnamBench | 672 | test | `lean-4.27.0` |
+
+Exact upstream commits, authorship, licenses, extraction rules, and SHA-256 digests are recorded in
+[`data/README.md`](data/README.md) and each dataset's `PROVENANCE.md`. The snapshots contain
+benchmark statements with `sorry` placeholders, not generated answers or reference proofs.
+
+## Installation
+
+Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
 
 ```bash
 uv sync --all-groups
 cp .env.example .env
 ```
 
-所有凭据和运行参数均由 `.env` 管理；`.env`、上游临时 checkout 和 `results/` 不会提交到
-Git。`data/*/problems.jsonl` 是经过审计并固定版本的项目输入，会正常提交。
+## Configuration
 
-## 配置模型
-
-本地 vLLM（模型服务需由使用者另行启动）：
+For a local vLLM-compatible endpoint:
 
 ```dotenv
 MODEL_BASE_URL=http://localhost:8000/v1
@@ -39,7 +49,7 @@ MODEL_API_KEY=
 MODEL_NAME=Qwen/Qwen3-8B
 ```
 
-DeepSeek：
+For DeepSeek:
 
 ```dotenv
 MODEL_BASE_URL=https://api.deepseek.com/v1
@@ -47,14 +57,8 @@ MODEL_API_KEY=replace-me
 MODEL_NAME=deepseek-chat
 ```
 
-提供商特有参数可以用 JSON 注入，而无需修改代码：
-
-```dotenv
-MODEL_EXTRA_BODY={"top_p":0.95}
-MODEL_EXTRA_HEADERS={"X-Custom-Header":"value"}
-```
-
-Lean 环境由每条数据记录决定，`.env` 只为没有版本信息的手动题目提供回退：
+Provider-specific JSON parameters and headers can be supplied with `MODEL_EXTRA_BODY` and
+`MODEL_EXTRA_HEADERS`. AXLE is configured separately:
 
 ```dotenv
 AXLE_API_URL=https://axle.axiommath.ai
@@ -63,111 +67,81 @@ AXLE_ENVIRONMENT=
 AXLE_TIMEOUT_SECONDS=900
 ```
 
-AXLE 官方名称与环境变量拼写都是 `AXLE`；PyPI 发行包叫 `axiom-axle`，Python 导入名为
-`axle`。API key 在允许匿名调用的服务上可以留空。
+`AXLE_ENVIRONMENT` is only a fallback for custom tasks without version metadata. Bundled records
+carry their own `environment`, and checkout imports derive it from `lean-toolchain`. Secrets in
+`.env`, evaluation output in `results/`, and temporary upstream checkouts are ignored by Git.
 
-## 使用内置数据集
+## Running evaluations
 
-直接评测仓库内的固定快照：
-
-```bash
-uv run lean-eval run data/minif2f/problems.jsonl --name minif2f --split test --limit 1
-uv run lean-eval run data/putnambench/problems.jsonl --name putnambench --limit 1
-```
-
-## 更新或添加数据集
-
-查看支持的上游布局：
+Start with one miniF2F problem:
 
 ```bash
-uv run lean-eval datasets list
+uv run lean-eval run data/minif2f/problems.jsonl \
+  --name minif2f --split test --limit 1
 ```
 
-如需从新版上游重新生成 miniF2F：
+Run PutnamBench with four attempts per problem:
 
 ```bash
-git clone https://github.com/google-deepmind/miniF2F data/.upstream-minif2f
-uv run lean-eval datasets import data/.upstream-minif2f \
-  --name minif2f --output data/minif2f/problems.jsonl
+uv run lean-eval run data/putnambench/problems.jsonl \
+  --name putnambench --attempts 4 --concurrency 4
 ```
 
-PutnamBench：
-
-```bash
-git clone https://github.com/trishullab/PutnamBench data/.upstream-putnambench
-uv run lean-eval datasets import data/.upstream-putnambench \
-  --name putnambench --output data/putnambench/problems.jsonl
-```
-
-也可以不预先生成 JSONL，直接把仓库目录传给 `lean-eval run`。更新已提交快照时，必须同步
-更新对应 `PROVENANCE.md` 的 commit、题数、日期和 SHA-256。规范化 JSONL 每行格式如下：
-
-```json
-{"id":"demo","dataset":"manual","split":"dev","environment":"lean-4.27.0","formal_statement":"import Mathlib\ntheorem demo : True := by\n  sorry\n","informal_statement":"证明 True。","metadata":{}}
-```
-
-必填字段是 `id` 与包含至少一个 `sorry` 的 `formal_statement`。建议同时显式填写 AXLE
-环境名格式的 `environment`。从仓库目录导入时，工具会读取 `lean-toolchain` 并把例如
-`leanprover/lean4:v4.27.0` 固定为 `lean-4.27.0`；内置数据集在缺少该文件时使用已知版本回退。
-加载器也接受常见别名，例如
-`name`、`statement`、`code`、`nl_statement`；未识别字段会保存在 `metadata`。对于目录，每个含
-`sorry` 的 `.lean` 文件会成为一个任务，因此可以直接手动添加题目：
-
-```lean
-import Mathlib
-
-/-- A manually added problem. -/
-theorem my_problem (n : ℕ) : n = n := by
-  sorry
-```
-
-## 运行评测
-
-先用一题确认模型和 AXLE 配置：
-
-```bash
-uv run lean-eval run data/minif2f/problems.jsonl --name minif2f --split test --limit 1
-```
-
-再运行完整评测：
-
-```bash
-uv run lean-eval run data/minif2f/problems.jsonl --name minif2f --split test
-uv run lean-eval run data/putnambench/problems.jsonl --name putnambench \
-  --attempts 4 --concurrency 4
-```
-
-可用可重复的 `--id` 精确选择题目：
+Select exact problem IDs by repeating `--id`:
 
 ```bash
 uv run lean-eval run data/putnambench/problems.jsonl \
   --name putnambench --id putnam_1968_a1
 ```
 
-CLI 参数优先于 `.env` 中的 `EVAL_ATTEMPTS`、`EVAL_CONCURRENCY` 和 `EVAL_RESULTS_DIR`。
-`--attempts k` 会为每题独立生成 k 个候选，并报告经验 pass@k（至少一个候选通过的题目比例）。
-
-每次运行产生独立目录：
+Each run creates:
 
 ```text
-results/<UTC时间>-<模型名>/
-├── run.json       # 非敏感运行配置与数据来源
-├── results.jsonl  # 每次尝试的原始回答、Lean 代码、用量、错误与 AXLE 详情
-└── summary.json   # 总题数、成功尝试、已解题数和 pass@k
+results/<UTC timestamp>-<model>/
+├── run.json
+├── results.jsonl
+└── summary.json
 ```
 
-结果会在每次尝试完成时立即追加，因此中断后已经完成的记录仍会保留。API key 不会写入产物。
+Completed attempts are appended immediately, so useful results survive an interrupted run. API
+keys are never written to these artifacts.
 
-## 判分规则
+## Adding or updating datasets
 
-模型被要求返回完整 Lean 源文件并替换所有 `sorry`。每个候选连同未经改动的原题分别作为
-AXLE `verify_proof` 的 `content` 与 `formal_statement` 提交；项目显式设置
-`permitted_sorries=[]`。只有 AXLE 同时返回 `okay = true` 且 `failed_declarations` 为空时才通过。
-候选代码只发送给模型 API 与 AXLE，不会在本机执行。
+List supported layouts and normalize a custom source:
 
-## 开发
+```bash
+uv run lean-eval datasets list
+uv run lean-eval datasets import path/to/tasks \
+  --name custom --output data/custom/problems.jsonl
+```
+
+The normalized JSONL format requires `id` and a `formal_statement` containing at least one `sorry`.
+An explicit AXLE environment is strongly recommended:
+
+```json
+{"id":"demo","dataset":"custom","split":"dev","environment":"lean-4.27.0","formal_statement":"import Mathlib\ntheorem demo : True := by\n  sorry\n","metadata":{}}
+```
+
+When updating a bundled snapshot, also update its `PROVENANCE.md` with the upstream commit, task
+counts, extraction date, transformation notes, and SHA-256 digest.
+
+## Verification rule
+
+The untouched benchmark source is passed to AXLE as `formal_statement`; the model candidate is
+passed as `content`, with `permitted_sorries=[]`. A result passes only when AXLE returns
+`okay = true` and an empty `failed_declarations` list. Candidate Lean code is sent to the model API
+and AXLE but is never executed locally.
+
+## Development and validation record
 
 ```bash
 uv run ruff check .
 uv run pytest
 ```
+
+The test suite covers unit logic, CLI behavior, API contracts, dataset integrity, and snapshot
+digests. A live smoke test using the configured DeepSeek endpoint successfully generated a
+miniF2F proof that passed AXLE under the dataset-pinned `lean-4.27.0` environment. PutnamBench
+environment selection was separately confirmed against AXLE, including strict rejection of an
+unfilled `sorry` declaration.
