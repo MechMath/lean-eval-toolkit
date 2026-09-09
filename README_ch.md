@@ -92,6 +92,16 @@ uv run lean-eval run data/putnambench/problems.jsonl \
   --name putnambench --id putnam_1968_a1
 ```
 
+兼容性实验中可以强制覆盖 AXLE Lean 环境：
+
+```bash
+uv run lean-eval run data/minif2f/problems.jsonl \
+  --name minif2f --environment lean-4.28.0
+```
+
+优先级为 `--environment` > 数据记录中的 `environment` > `AXLE_ENVIRONMENT` 回退值。覆盖仅对
+本次运行生效，不修改固定版本的 JSONL，并会记录在 `run.json` 中。
+
 每次运行都会生成：
 
 ```text

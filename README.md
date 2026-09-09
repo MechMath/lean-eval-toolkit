@@ -94,6 +94,17 @@ uv run lean-eval run data/putnambench/problems.jsonl \
   --name putnambench --id putnam_1968_a1
 ```
 
+Force an AXLE Lean environment for a compatibility experiment:
+
+```bash
+uv run lean-eval run data/minif2f/problems.jsonl \
+  --name minif2f --environment lean-4.28.0
+```
+
+The precedence is `--environment` > the dataset record's `environment` > the
+`AXLE_ENVIRONMENT` fallback. The override applies only to the current run, does not modify the
+versioned JSONL snapshot, and is recorded in `run.json`.
+
 Each run creates:
 
 ```text

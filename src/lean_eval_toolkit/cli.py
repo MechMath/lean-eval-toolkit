@@ -81,10 +81,16 @@ async def _run_evaluation(
     problems: list,
     settings: Settings,
     source: Path,
+    environment_override: str | None,
     progress: Progress,
     progress_task: int,
 ) -> tuple[Path, float, int, int]:
-    writer = RunWriter(settings, dataset_source=source, problems=problems)
+    writer = RunWriter(
+        settings,
+        dataset_source=source,
+        problems=problems,
+        environment_override=environment_override,
+    )
 
     async def report(result: AttemptResult) -> None:
         progress.update(
@@ -122,6 +128,13 @@ def run_evaluation(
     ],
     name: Annotated[str, typer.Option("--name", help="Dataset name.")] = "custom",
     split: Annotated[str | None, typer.Option(help="Only evaluate this split.")] = None,
+    environment: Annotated[
+        str | None,
+        typer.Option(
+            "--environment",
+            help="Force one AXLE Lean environment, overriding dataset metadata.",
+        ),
+    ] = None,
     problem_ids: Annotated[
         list[str] | None, typer.Option("--id", help="Only evaluate this problem ID; repeatable.")
     ] = None,
@@ -154,6 +167,9 @@ def run_evaluation(
     if not problems:
         console.print("[red]No problems matched the requested filters.[/red]")
         raise typer.Exit(2)
+    if environment:
+        for problem in problems:
+            problem.environment = environment
     if attempts is not None:
         settings.eval_attempts = attempts
     if concurrency is not None:
@@ -165,7 +181,7 @@ def run_evaluation(
         task = progress.add_task("Starting evaluation", total=total)
         try:
             output, pass_at_k, solved, problem_count = asyncio.run(
-                _run_evaluation(problems, settings, source, progress, task)
+                _run_evaluation(problems, settings, source, environment, progress, task)
             )
         except KeyboardInterrupt as exc:
             console.print(

@@ -71,7 +71,12 @@ async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
         eval_results_dir=tmp_path,
         eval_attempts=1,
     )
-    writer = RunWriter(settings, dataset_source=Path("tasks.jsonl"), problems=problems()[:1])
+    writer = RunWriter(
+        settings,
+        dataset_source=Path("tasks.jsonl"),
+        problems=problems()[:1],
+        environment_override="lean-4.28.0",
+    )
     results, summary = await evaluate(
         problems()[:1], FakeGenerator(), FakeVerifier(), attempts=1, concurrency=1,
         on_result=writer.append,
@@ -82,3 +87,6 @@ async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
     assert writer.results_path.read_text(encoding="utf-8").count("\n") == 1
     assert (writer.directory / "run.json").is_file()
     assert (writer.directory / "summary.json").is_file()
+    assert '"environment_override": "lean-4.28.0"' in (
+        writer.directory / "run.json"
+    ).read_text(encoding="utf-8")

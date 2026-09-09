@@ -139,7 +139,12 @@ class RunWriter:
     """Stream results to disk so interrupted evaluations retain completed attempts."""
 
     def __init__(
-        self, settings: Settings, *, dataset_source: Path, problems: Sequence[LeanProblem]
+        self,
+        settings: Settings,
+        *,
+        dataset_source: Path,
+        problems: Sequence[LeanProblem],
+        environment_override: str | None = None,
     ):
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         model_slug = (settings.model_name or "unknown-model").replace("/", "-")
@@ -154,6 +159,7 @@ class RunWriter:
             "model_base_url": settings.model_base_url,
             "axle_api_url": settings.axle_api_url,
             "axle_environment_fallback": settings.axle_environment,
+            "environment_override": environment_override,
             "dataset_environments": sorted(
                 {
                     environment
