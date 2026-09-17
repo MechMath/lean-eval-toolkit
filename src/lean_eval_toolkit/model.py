@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,15 +9,12 @@ import httpx
 
 from lean_eval_toolkit.config import Settings
 from lean_eval_toolkit.datasets import LeanProblem
-
-DEFAULT_SYSTEM_PROMPT = """You are an expert Lean 4 theorem prover.
-Return a complete Lean source file that proves the requested declarations.
-Replace every `sorry` in the supplied file with sound code. Do not change theorem statements,
-introduce axioms, use `sorry`, or use unsafe features. Return only Lean code, preferably in one
-```lean fenced block.
-"""
-
-_LEAN_FENCE = re.compile(r"```(?:lean4?|Lean4?)?\s*\n(?P<code>.*?)```", re.DOTALL)
+from lean_eval_toolkit.sft_format import (
+    SFTFormatError,
+    build_sft_messages,
+    build_sft_prompt,
+    extract_sft_lean_code,
+)
 
 
 class ModelError(RuntimeError):
@@ -34,29 +30,16 @@ class Generation:
 
 
 def build_prompt(problem: LeanProblem) -> str:
-    """Build a stable benchmark prompt without leaking reference proofs."""
-    sections = [f"Problem ID: {problem.id}"]
-    if problem.informal_statement:
-        sections.extend(["Informal statement:", problem.informal_statement])
-    sections.extend(
-        [
-            "Complete this Lean file by replacing every `sorry`:",
-            "```lean",
-            problem.formal_statement,
-            "```",
-        ]
-    )
-    return "\n\n".join(sections)
+    """Build the user prompt used during supervised fine-tuning."""
+    return build_sft_prompt(problem.formal_statement, problem.informal_statement)
 
 
 def extract_lean_code(response: str) -> str:
-    """Extract the first fenced Lean block, or use a plain-code response as-is."""
-    match = _LEAN_FENCE.search(response)
-    code = match.group("code") if match else response
-    code = code.strip()
-    if not code:
-        raise ModelError("model returned an empty response")
-    return code + "\n"
+    """Extract the final ``lean4`` block required by the SFT response format."""
+    try:
+        return extract_sft_lean_code(response)
+    except SFTFormatError as exc:
+        raise ModelError(str(exc)) from exc
 
 
 def _message_text(content: Any) -> str:
@@ -97,10 +80,10 @@ class OpenAICompatibleClient:
     async def generate(self, problem: LeanProblem) -> Generation:
         payload: dict[str, Any] = {
             "model": self.settings.require_model_name(),
-            "messages": [
-                {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
-                {"role": "user", "content": build_prompt(problem)},
-            ],
+            "messages": build_sft_messages(
+                problem.formal_statement,
+                problem.informal_statement,
+            ),
             "temperature": self.settings.model_temperature,
             "max_tokens": self.settings.model_max_tokens,
         }

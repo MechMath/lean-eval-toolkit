@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from lean_eval_toolkit.sft_format import split_source_header
+
 
 class DatasetError(ValueError):
     """Raised when a dataset cannot be normalized safely."""
@@ -59,6 +61,9 @@ _MINIF2F_THEOREM = re.compile(
     r"(?m)^theorem\s+(?P<name>[A-Za-z0-9_'.]+)\b"
 )
 _SORRY_LINE = re.compile(r"(?m)^\s+sorry\s*$")
+_MINIF2F_UPSTREAM_IMPORT = "import MiniF2F.ProblemImports"
+_MINIF2F_TEST_IMPORT = "import Mathlib"
+_MINIF2F_TEST_ENVIRONMENT = "lean-4.30.0"
 
 
 def _first(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -86,6 +91,9 @@ def _normalize_record(
     }
     metadata = dict(record.get("metadata") or {})
     metadata.update({key: value for key, value in record.items() if key not in known})
+    formal, source_header = split_source_header(formal)
+    if source_header:
+        metadata.setdefault("source_header", source_header)
     try:
         return LeanProblem(
             id=problem_id,
@@ -173,8 +181,29 @@ def _minif2f_problems(
     first_start = matches[0].start()
     prelude_end = content.rfind("/--", 0, first_start)
     prelude = content[: prelude_end if prelude_end >= 0 else first_start].rstrip()
+    prelude, source_header = split_source_header(prelude)
+    prelude = prelude.rstrip()
     relative = path.relative_to(base)
     split = _infer_split(relative)
+    problem_environment = environment
+    compatibility: dict[str, str]
+    if split == "test":
+        prelude = prelude.replace(_MINIF2F_UPSTREAM_IMPORT, _MINIF2F_TEST_IMPORT, 1)
+        problem_environment = _MINIF2F_TEST_ENVIRONMENT
+        compatibility = {
+            "status": "verified",
+            "checked_at": "2026-09-17",
+            "environment": _MINIF2F_TEST_ENVIRONMENT,
+            "import": "Mathlib",
+        }
+    else:
+        compatibility = {
+            "status": "unverified",
+            "reason": (
+                "not included in the AXLE test-split compatibility run; "
+                "answer(...) syntax requires normalization"
+            ),
+        }
     for index, match in enumerate(matches):
         next_start = matches[index + 1].start() if index + 1 < len(matches) else len(content)
         declaration = content[match.start() : next_start]
@@ -194,10 +223,14 @@ def _minif2f_problems(
             split=split,
             formal_statement=f"{prelude}\n\n{declaration}\n",
             informal_statement=informal,
-            environment=environment,
+            environment=problem_environment,
             metadata={
                 "source_path": relative.as_posix(),
-                "environment_source": environment_source,
+                "environment_source": (
+                    "AXLE compatibility check" if split == "test" else environment_source
+                ),
+                **({"source_header": source_header} if source_header else {}),
+                "axle_compatibility": compatibility,
             },
         )
 
@@ -229,6 +262,7 @@ def load_lean_files(
         content = path.read_text(encoding="utf-8")
         if "sorry" not in content:
             continue
+        content, source_header = split_source_header(content)
         relative = path.relative_to(base)
         yield LeanProblem(
             id=relative.with_suffix("").as_posix(),
@@ -239,6 +273,7 @@ def load_lean_files(
             metadata={
                 "source_path": relative.as_posix(),
                 "environment_source": environment_source,
+                **({"source_header": source_header} if source_header else {}),
             },
         )
 

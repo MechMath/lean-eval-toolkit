@@ -23,7 +23,7 @@ served by vLLM or a compatible commercial API such as DeepSeek, OpenAI, or OpenR
 
 | Dataset | Tasks | Split | Lean environment |
 | --- | ---: | --- | --- |
-| miniF2F | 498 | 256 validation, 242 test | `lean-4.27.0` |
+| miniF2F | 498 | 256 validation (unverified), 242 test | test: `lean-4.30.0`; validation: `lean-4.27.0` |
 | PutnamBench | 672 | test | `lean-4.27.0` |
 
 Exact upstream commits, authorship, licenses, extraction rules, and SHA-256 digests are recorded in
@@ -80,6 +80,9 @@ uv run lean-eval run data/minif2f/problems.jsonl \
   --name minif2f --split test --limit 1
 ```
 
+Use `--split test` for miniF2F evaluation. Its 242 test statements are AXLE-verified with
+`import Mathlib` under `lean-4.30.0`; the validation split remains explicitly unverified.
+
 Run PutnamBench with four attempts per problem:
 
 ```bash
@@ -104,6 +107,16 @@ uv run lean-eval run data/minif2f/problems.jsonl \
 The precedence is `--environment` > the dataset record's `environment` > the
 `AXLE_ENVIRONMENT` fallback. The override applies only to the current run, does not modify the
 versioned JSONL snapshot, and is recorded in `run.json`.
+
+Model requests use the same chat format as the project's SFT data: one `user` message beginning
+with `Complete the following Lean 4 code:`, followed by the source in a `lean4` fence and the
+detailed-proof-plan instruction. When a benchmark provides an informal statement (for example,
+miniF2F), it is prepended inside that fence as Lean `--` comments. Model responses may include the
+requested reasoning, but must end with an explicitly labelled `lean4` fenced block; that final
+block is the candidate sent to AXLE.
+
+Source copyright, release, license, and author headers are stored as provenance in
+`metadata.source_header`; they are removed from `formal_statement` and are never sent to the model.
 
 Each run creates:
 

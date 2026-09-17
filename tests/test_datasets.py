@@ -32,6 +32,32 @@ def test_loads_common_minif2f_jsonl_shape(tmp_path: Path) -> None:
     assert problem.metadata == {"header": "import Mathlib"}
 
 
+def test_moves_source_header_from_formal_statement_to_metadata(tmp_path: Path) -> None:
+    source_header = """/-
+Copyright (c) Example Authors.
+Released under Apache 2.0 license.
+Authors: Example Author
+-/"""
+    source = tmp_path / "tasks.jsonl"
+    source.write_text(
+        json.dumps(
+            {
+                "id": "demo",
+                "formal_statement": (
+                    f"{source_header}\nimport Mathlib\ntheorem demo : True := by sorry"
+                ),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    [problem] = load_dataset(source)
+
+    assert problem.formal_statement == "import Mathlib\ntheorem demo : True := by sorry"
+    assert problem.metadata["source_header"] == source_header
+
+
 def test_loads_putnambench_checkout_layout(tmp_path: Path) -> None:
     checkout = tmp_path / "PutnamBench"
     source = checkout / "lean4" / "src"
@@ -75,7 +101,9 @@ theorem second : 1 = 1 := by
     assert all(problem.split == "test" for problem in loaded)
     assert loaded[0].informal_statement == "First problem."
     assert "theorem second" not in loaded[0].formal_statement
-    assert loaded[0].environment == "lean-4.27.0"
+    assert loaded[0].formal_statement.startswith("import Mathlib\n")
+    assert loaded[0].environment == "lean-4.30.0"
+    assert loaded[0].metadata["axle_compatibility"]["status"] == "verified"
 
 
 def test_rejects_statement_without_sorry(tmp_path: Path) -> None:

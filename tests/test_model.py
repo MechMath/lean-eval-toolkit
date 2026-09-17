@@ -21,16 +21,39 @@ def problem() -> LeanProblem:
     )
 
 
-def test_build_prompt_contains_both_statements(problem: LeanProblem) -> None:
+def test_build_prompt_includes_informal_statement_as_lean_comment(problem: LeanProblem) -> None:
     prompt = build_prompt(problem)
-    assert "Prove True." in prompt
-    assert problem.formal_statement in prompt
+    assert "Complete the following Lean 4 code:" in prompt
+    assert problem.formal_statement.rstrip() in prompt
+    assert "-- Informal statement:\n-- Prove True.\n\nimport Mathlib" in prompt
+    assert prompt.endswith(
+        "The plan should highlight key ideas, intermediate lemmas, and proof structures that will "
+        "guide the construction of the final formal proof."
+    )
 
 
 def test_extracts_lean_fence() -> None:
-    assert extract_lean_code("Explanation\n```lean\ntheorem x : True := by trivial\n```") == (
+    assert extract_lean_code("Explanation\n```lean4\ntheorem x : True := by trivial\n```") == (
         "theorem x : True := by trivial\n"
     )
+
+
+def test_extracts_final_lean4_fence_instead_of_reasoning_example() -> None:
+    response = """Plan with an example:
+```
+example : True := by trivial
+```
+
+```lean4
+theorem final : True := by trivial
+```
+"""
+    assert extract_lean_code(response) == "theorem final : True := by trivial\n"
+
+
+def test_rejects_response_without_labelled_lean4_fence() -> None:
+    with pytest.raises(ModelError, match="fenced `lean4` code block"):
+        extract_lean_code("```lean\ntheorem x : True := by trivial\n```")
 
 
 @pytest.mark.asyncio
@@ -41,12 +64,13 @@ async def test_calls_openai_compatible_endpoint(problem: LeanProblem) -> None:
         body = __import__("json").loads(request.content)
         assert body["model"] == "prover"
         assert body["top_p"] == 0.9
+        assert body["messages"] == [{"role": "user", "content": build_prompt(problem)}]
         return httpx.Response(
             200,
             json={
                 "choices": [
                     {
-                        "message": {"content": "```lean\ntheorem demo : True := by trivial\n```"},
+                        "message": {"content": "```lean4\ntheorem demo : True := by trivial\n```"},
                         "finish_reason": "stop",
                     }
                 ],

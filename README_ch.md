@@ -22,7 +22,7 @@ DeepSeek、OpenAI 或 OpenRouter 等兼容商业 API。
 
 | 数据集 | 题数 | 划分 | Lean 环境 |
 | --- | ---: | --- | --- |
-| miniF2F | 498 | validation 256，test 242 | `lean-4.27.0` |
+| miniF2F | 498 | validation 256（未验证），test 242 | test：`lean-4.30.0`；validation：`lean-4.27.0` |
 | PutnamBench | 672 | test | `lean-4.27.0` |
 
 上游 commit、原作者、许可证、提取规则和 SHA-256 记录在
@@ -78,6 +78,9 @@ uv run lean-eval run data/minif2f/problems.jsonl \
   --name minif2f --split test --limit 1
 ```
 
+运行 miniF2F 时请使用 `--split test`。其中 242 道 test 题已在 AXLE `lean-4.30.0` 环境下
+使用 `import Mathlib` 验证；validation split 仍明确标记为未验证。
+
 以每题四次尝试运行 PutnamBench：
 
 ```bash
@@ -101,6 +104,15 @@ uv run lean-eval run data/minif2f/problems.jsonl \
 
 优先级为 `--environment` > 数据记录中的 `environment` > `AXLE_ENVIRONMENT` 回退值。覆盖仅对
 本次运行生效，不修改固定版本的 JSONL，并会记录在 `run.json` 中。
+
+模型请求与 SFT 数据使用相同的对话格式：仅包含一条 `user` 消息，以
+`Complete the following Lean 4 code:` 开头，随后是 `lean4` 代码块和详细证明计划要求。模型
+数据若带有 informal 表述（例如 miniF2F），会以 Lean `--` 行注释的形式插入该代码块开头。
+模型回复可以包含所要求的推理过程，但必须以显式标记为 `lean4` 的代码块结尾；工具会提取
+最后一个这样的代码块并将其发送给 AXLE 验证。
+
+源文件开头的 copyright、release、license 和 author 声明会作为来源信息保存在
+`metadata.source_header`，并从 `formal_statement` 中移除，不会发送给待测模型。
 
 每次运行都会生成：
 
