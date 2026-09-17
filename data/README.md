@@ -10,11 +10,11 @@ run the documented import command, review the diff, and update its provenance di
 
 - `minif2f/problems.jsonl`: 498 tasks, split into 256 unverified validation tasks and 242
   AXLE-verified test tasks.
-- `putnambench/problems.jsonl`: 672 test tasks.
+- `putnambench/problems.jsonl`: 672 AXLE-verified test tasks.
 
 All records explicitly pin an `environment`. miniF2F test records use AXLE `lean-4.30.0`;
-miniF2F validation and PutnamBench records currently retain `lean-4.27.0`. The runtime uses this
-per-record value instead of the `.env` fallback.
+PutnamBench records also use AXLE `lean-4.30.0`; miniF2F validation records currently retain
+`lean-4.27.0`. The runtime uses this per-record value instead of the `.env` fallback.
 
 Leading copyright, release, license, and author blocks are kept in
 `metadata.source_header` rather than `formal_statement`. This preserves source attribution in the

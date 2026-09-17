@@ -21,7 +21,7 @@ ROOT = Path(__file__).parents[1]
             "data/putnambench/problems.jsonl",
             672,
             {"test": 672},
-            "c77b8f54caa9f0d882292cf508e7a4d26bfbb5248ee9a262c7827ae94b9d1e84",
+            "9dda6adc70ce209ef09ce4dbebfa5706d72286510afd1ae753943a76d04e34b7",
         ),
     ],
 )
@@ -59,5 +59,14 @@ def test_bundled_snapshot_integrity(
             record["metadata"]["axle_compatibility"]["status"] for record in validation
         } == {"unverified"}
     else:
-        assert {record["environment"] for record in records} == {"lean-4.27.0"}
+        assert {record["environment"] for record in records} == {"lean-4.30.0"}
+        assert {record["formal_statement"].splitlines()[0] for record in records} == {
+            "import Mathlib"
+        }
+        assert {
+            record["metadata"]["axle_compatibility"]["status"] for record in records
+        } == {"verified"}
+        fixed = next(record for record in records if record["id"] == "putnam_1966_b5")
+        assert "s.toSet" not in fixed["formal_statement"]
+        assert fixed["metadata"]["compatibility_transformations"]
     assert hashlib.sha256(payload).hexdigest() == expected_sha256

@@ -23,7 +23,7 @@ DeepSeek、OpenAI 或 OpenRouter 等兼容商业 API。
 | 数据集 | 题数 | 划分 | Lean 环境 |
 | --- | ---: | --- | --- |
 | miniF2F | 498 | validation 256（未验证），test 242 | test：`lean-4.30.0`；validation：`lean-4.27.0` |
-| PutnamBench | 672 | test | `lean-4.27.0` |
+| PutnamBench | 672 | test | `lean-4.30.0` |
 
 上游 commit、原作者、许可证、提取规则和 SHA-256 记录在
 [`data/README.md`](data/README.md)及各数据集的 `PROVENANCE.md` 中。快照只包含带 `sorry`

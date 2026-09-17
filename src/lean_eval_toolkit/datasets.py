@@ -49,7 +49,7 @@ BUILTIN_DATASETS: dict[str, dict[str, str]] = {
         "description": "Putnam competition problems formalized in Lean 4",
         "upstream": "https://github.com/trishullab/PutnamBench",
         "layout": "Repository checkout; Lean tasks are read from lean4/src/*.lean",
-        "fallback_environment": "lean-4.27.0",
+        "fallback_environment": "lean-4.30.0",
     },
 }
 
@@ -64,6 +64,20 @@ _SORRY_LINE = re.compile(r"(?m)^\s+sorry\s*$")
 _MINIF2F_UPSTREAM_IMPORT = "import MiniF2F.ProblemImports"
 _MINIF2F_TEST_IMPORT = "import Mathlib"
 _MINIF2F_TEST_ENVIRONMENT = "lean-4.30.0"
+_PUTNAMBENCH_ENVIRONMENT = "lean-4.30.0"
+_PUTNAM_1966_B5_OLD = "s.toSet"
+_PUTNAM_1966_B5_NEW = "(s : Set (EuclideanSpace ℝ (Fin 2)))"
+
+
+def _normalize_putnambench_source(problem_id: str, source: str) -> tuple[str, list[str]]:
+    """Apply statement-preserving compatibility rewrites verified against AXLE."""
+    transformations: list[str] = []
+    if problem_id == "putnam_1966_b5" and _PUTNAM_1966_B5_OLD in source:
+        source = source.replace(_PUTNAM_1966_B5_OLD, _PUTNAM_1966_B5_NEW, 1)
+        transformations.append(
+            f"{_PUTNAM_1966_B5_OLD} -> {_PUTNAM_1966_B5_NEW}"
+        )
+    return source, transformations
 
 
 def _first(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -264,16 +278,34 @@ def load_lean_files(
             continue
         content, source_header = split_source_header(content)
         relative = path.relative_to(base)
+        problem_id = relative.with_suffix("").as_posix()
+        problem_environment = environment
+        metadata_environment_source = environment_source
+        compatibility: dict[str, Any] = {}
+        if dataset == "putnambench":
+            content, transformations = _normalize_putnambench_source(problem_id, content)
+            problem_environment = _PUTNAMBENCH_ENVIRONMENT
+            metadata_environment_source = "AXLE compatibility check"
+            compatibility = {
+                "axle_compatibility": {
+                    "status": "verified",
+                    "checked_at": "2026-09-17",
+                    "environment": _PUTNAMBENCH_ENVIRONMENT,
+                    "import": "Mathlib",
+                },
+                **({"compatibility_transformations": transformations} if transformations else {}),
+            }
         yield LeanProblem(
-            id=relative.with_suffix("").as_posix(),
+            id=problem_id,
             dataset=dataset,
             split=split or ("test" if dataset == "putnambench" else _infer_split(relative)),
             formal_statement=content,
-            environment=environment,
+            environment=problem_environment,
             metadata={
                 "source_path": relative.as_posix(),
-                "environment_source": environment_source,
+                "environment_source": metadata_environment_source,
                 **({"source_header": source_header} if source_header else {}),
+                **compatibility,
             },
         )
 

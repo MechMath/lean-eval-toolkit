@@ -24,7 +24,7 @@ served by vLLM or a compatible commercial API such as DeepSeek, OpenAI, or OpenR
 | Dataset | Tasks | Split | Lean environment |
 | --- | ---: | --- | --- |
 | miniF2F | 498 | 256 validation (unverified), 242 test | test: `lean-4.30.0`; validation: `lean-4.27.0` |
-| PutnamBench | 672 | test | `lean-4.27.0` |
+| PutnamBench | 672 | test | `lean-4.30.0` |
 
 Exact upstream commits, authorship, licenses, extraction rules, and SHA-256 digests are recorded in
 [`data/README.md`](data/README.md) and each dataset's `PROVENANCE.md`. The snapshots contain

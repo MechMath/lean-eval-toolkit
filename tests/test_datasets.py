@@ -75,8 +75,29 @@ def test_loads_putnambench_checkout_layout(tmp_path: Path) -> None:
     assert problem.id == "putnam_2024_a1"
     assert problem.split == "test"
     assert problem.metadata["source_path"] == "putnam_2024_a1.lean"
-    assert problem.environment == "lean-4.26.0"
-    assert problem.metadata["environment_source"] == "lean4/lean-toolchain"
+    assert problem.environment == "lean-4.30.0"
+    assert problem.metadata["environment_source"] == "AXLE compatibility check"
+    assert problem.metadata["axle_compatibility"]["status"] == "verified"
+
+
+def test_normalizes_putnam_1966_b5_for_mathlib_430(tmp_path: Path) -> None:
+    source = tmp_path / "PutnamBench" / "lean4" / "src"
+    source.mkdir(parents=True)
+    (source / "putnam_1966_b5.lean").write_text(
+        """import Mathlib
+theorem putnam_1966_b5
+    (s : Finset (EuclideanSpace ℝ (Fin 2)))
+    (h : Set.Nonempty s.toSet) : True := by
+  sorry
+""",
+        encoding="utf-8",
+    )
+
+    [problem] = load_dataset(source.parents[1], dataset="putnambench")
+
+    assert "s.toSet" not in problem.formal_statement
+    assert "(s : Set (EuclideanSpace ℝ (Fin 2)))" in problem.formal_statement
+    assert problem.metadata["compatibility_transformations"]
 
 
 def test_splits_upstream_minif2f_aggregate(tmp_path: Path) -> None:
