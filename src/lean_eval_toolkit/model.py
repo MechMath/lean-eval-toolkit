@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,9 +18,15 @@ from lean_eval_toolkit.sft_format import (
     extract_sft_lean_code,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ModelError(RuntimeError):
     """Raised for invalid or unsuccessful model API responses."""
+
+
+class _RetryableModelError(ModelError):
+    """A transient model API failure that may succeed on another request."""
 
 
 @dataclass(slots=True)
@@ -57,14 +65,14 @@ class OpenAICompatibleClient:
 
     def __init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
-        headers = dict(settings.model_extra_headers)
-        api_key = settings.model_api_key.get_secret_value()
+        headers = dict(settings.model.extra_headers)
+        api_key = settings.model.api_key.get_secret_value()
         if api_key:
             headers.setdefault("Authorization", f"Bearer {api_key}")
         self._client = httpx.AsyncClient(
-            base_url=settings.model_base_url.rstrip("/") + "/",
+            base_url=settings.model.base_url.rstrip("/") + "/",
             headers=headers,
-            timeout=settings.model_timeout_seconds,
+            timeout=settings.model.timeout_seconds,
             transport=transport,
         )
 
@@ -77,17 +85,7 @@ class OpenAICompatibleClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def generate(self, problem: LeanProblem) -> Generation:
-        payload: dict[str, Any] = {
-            "model": self.settings.require_model_name(),
-            "messages": build_sft_messages(
-                problem.formal_statement,
-                problem.informal_statement,
-            ),
-            "temperature": self.settings.model_temperature,
-            "max_tokens": self.settings.model_max_tokens,
-        }
-        payload.update(self.settings.model_extra_body)
+    async def _request(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             response = await self._client.post("chat/completions", json=payload)
             response.raise_for_status()
@@ -95,9 +93,45 @@ class OpenAICompatibleClient:
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text[:500]
             message = f"model API returned HTTP {exc.response.status_code}: {detail}"
+            if exc.response.status_code == 429 or exc.response.status_code >= 500:
+                raise _RetryableModelError(message) from exc
             raise ModelError(message) from exc
         except (httpx.HTTPError, ValueError) as exc:
-            raise ModelError(f"model API request failed: {exc}") from exc
+            raise _RetryableModelError(f"model API request failed: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ModelError("model API returned an invalid chat-completions response")
+        return data
+
+    async def _request_with_retries(self, payload: dict[str, Any]) -> dict[str, Any]:
+        for retry in range(self.settings.model.max_retries + 1):
+            try:
+                return await self._request(payload)
+            except _RetryableModelError as exc:
+                if retry == self.settings.model.max_retries:
+                    raise ModelError(str(exc)) from exc
+                delay = self.settings.retry.backoff_seconds * (2**retry)
+                logger.warning(
+                    "model request failed; retrying %s/%s in %.2fs: %s",
+                    retry + 1,
+                    self.settings.model.max_retries,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+        raise AssertionError("unreachable")
+
+    async def generate(self, problem: LeanProblem) -> Generation:
+        payload: dict[str, Any] = {
+            "model": self.settings.require_model_name(),
+            "messages": build_sft_messages(
+                problem.formal_statement,
+                problem.informal_statement,
+            ),
+            "temperature": self.settings.model.temperature,
+            "max_tokens": self.settings.model.max_tokens,
+        }
+        payload.update(self.settings.model.extra_body)
+        data = await self._request_with_retries(payload)
         try:
             choice = data["choices"][0]
             message = choice["message"]

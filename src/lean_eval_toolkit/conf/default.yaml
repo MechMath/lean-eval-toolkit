@@ -1,0 +1,26 @@
+includes:
+  - datasets.yaml
+
+model:
+  base_url: http://localhost:8000/v1
+  name: null
+  timeout_seconds: 300
+  max_retries: 2
+  max_tokens: 4096
+  temperature: 0
+  extra_body: {}
+  extra_headers: {}
+
+axle:
+  api_url: https://axle.axiommath.ai
+  environment: null
+  timeout_seconds: 900
+  max_retries: 2
+
+retry:
+  backoff_seconds: 1
+
+evaluation:
+  concurrency: 4
+  attempts: 1
+  results_dir: results

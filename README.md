@@ -41,15 +41,29 @@ cp .env.example .env
 
 ## Configuration
 
-For a local vLLM-compatible endpoint:
+Non-sensitive defaults are stored in
+[`conf/default.yaml`](src/lean_eval_toolkit/conf/default.yaml). It contains the `model`, `axle`,
+`retry`, and `evaluation` sections and imports the independent dataset registry with:
 
-```dotenv
-MODEL_BASE_URL=http://localhost:8000/v1
-MODEL_API_KEY=
-MODEL_NAME=Qwen/Qwen3-8B
+```yaml
+includes:
+  - datasets.yaml
 ```
 
-For DeepSeek:
+Built-in dataset descriptions, layouts, split environments, and import-module policies live in
+[`conf/datasets.yaml`](src/lean_eval_toolkit/conf/datasets.yaml). OmegaConf merges included YAML
+files before Pydantic validates the complete structure.
+
+Keep only secrets and deployment identity in `.env`. For the default local vLLM-compatible
+endpoint:
+
+```dotenv
+MODEL_NAME=Qwen/Qwen3-8B
+MODEL_API_KEY=
+AXLE_API_KEY=
+```
+
+Deployment-specific environment variables can still override YAML values. For DeepSeek:
 
 ```dotenv
 MODEL_BASE_URL=https://api.deepseek.com/v1
@@ -57,19 +71,20 @@ MODEL_API_KEY=replace-me
 MODEL_NAME=deepseek-chat
 ```
 
-Provider-specific JSON parameters and headers can be supplied with `MODEL_EXTRA_BODY` and
-`MODEL_EXTRA_HEADERS`. AXLE is configured separately:
+Use `LEAN_EVAL_CONFIG=/path/to/config.yaml` to select another root YAML file. Relative entries in
+its `includes` list resolve next to that file. Configuration precedence is explicit CLI overrides,
+process environment, `.env`, then composed YAML defaults.
 
-```dotenv
-AXLE_API_URL=https://axle.axiommath.ai
-AXLE_API_KEY=
-AXLE_ENVIRONMENT=
-AXLE_TIMEOUT_SECONDS=900
-```
+The existing `MODEL_*`, `AXLE_*`, `RETRY_BACKOFF_SECONDS`, and `EVAL_*` variables remain supported
+as overrides. Provider-specific JSON parameters and headers use `MODEL_EXTRA_BODY` and
+`MODEL_EXTRA_HEADERS`. `AXLE_ENVIRONMENT` is only a fallback for custom tasks without version
+metadata. Secrets in `.env`, evaluation output in `results/`, and temporary upstream checkouts are
+ignored by Git.
 
-`AXLE_ENVIRONMENT` is only a fallback for custom tasks without version metadata. Bundled records
-carry their own `environment`, and checkout imports derive it from `lean-toolchain`. Secrets in
-`.env`, evaluation output in `results/`, and temporary upstream checkouts are ignored by Git.
+`MODEL_MAX_RETRIES` and `AXLE_MAX_RETRIES` count retries after the initial request. Transient model
+network errors, HTTP 429/5xx responses, and retryable AXLE server errors use exponential backoff
+starting at `RETRY_BACKOFF_SECONDS`. Invalid requests and ordinary Lean verification failures are
+not retried.
 
 ## Running evaluations
 

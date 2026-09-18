@@ -147,28 +147,28 @@ class RunWriter:
         environment_override: str | None = None,
     ):
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        model_slug = (settings.model_name or "unknown-model").replace("/", "-")
-        self.directory = settings.eval_results_dir / f"{stamp}-{model_slug}"
+        model_slug = (settings.model.name or "unknown-model").replace("/", "-")
+        self.directory = settings.evaluation.results_dir / f"{stamp}-{model_slug}"
         self.directory.mkdir(parents=True, exist_ok=False)
         self.results_path = self.directory / "results.jsonl"
         self._lock = asyncio.Lock()
         manifest = {
             "created_at": datetime.now(UTC).isoformat(),
             "dataset_source": str(dataset_source),
-            "model_name": settings.model_name,
-            "model_base_url": settings.model_base_url,
-            "axle_api_url": settings.axle_api_url,
-            "axle_environment_fallback": settings.axle_environment,
+            "model_name": settings.model.name,
+            "model_base_url": settings.model.base_url,
+            "axle_api_url": settings.axle.api_url,
+            "axle_environment_fallback": settings.axle.environment,
             "environment_override": environment_override,
             "dataset_environments": sorted(
                 {
                     environment
                     for problem in problems
-                    if (environment := problem.environment or settings.axle_environment)
+                    if (environment := problem.environment or settings.axle.environment)
                 }
             ),
-            "attempts": settings.eval_attempts,
-            "concurrency": settings.eval_concurrency,
+            "attempts": settings.evaluation.attempts,
+            "concurrency": settings.evaluation.concurrency,
         }
         (self.directory / "run.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

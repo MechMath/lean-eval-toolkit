@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from lean_eval_toolkit.config import Settings
+from lean_eval_toolkit.config import load_settings
 from lean_eval_toolkit.datasets import LeanProblem
 from lean_eval_toolkit.model import (
     ModelError,
@@ -78,12 +78,16 @@ async def test_calls_openai_compatible_endpoint(problem: LeanProblem) -> None:
             },
         )
 
-    settings = Settings(
-        _env_file=None,
-        model_base_url="https://models.example/v1",
-        model_api_key="token",
-        model_name="prover",
-        model_extra_body={"top_p": 0.9},
+    settings = load_settings(
+        env_file=None,
+        overrides={
+            "model": {
+                "base_url": "https://models.example/v1",
+                "api_key": "token",
+                "name": "prover",
+                "extra_body": {"top_p": 0.9},
+            }
+        },
     )
     async with OpenAICompatibleClient(settings, transport=httpx.MockTransport(handler)) as client:
         generation = await client.generate(problem)
@@ -95,10 +99,75 @@ async def test_calls_openai_compatible_endpoint(problem: LeanProblem) -> None:
 @pytest.mark.asyncio
 async def test_reports_model_http_error(problem: LeanProblem) -> None:
     transport = httpx.MockTransport(lambda _: httpx.Response(401, text="bad key"))
-    settings = Settings(_env_file=None, model_name="prover")
+    settings = load_settings(env_file=None, overrides={"model": {"name": "prover"}})
     async with OpenAICompatibleClient(settings, transport=transport) as client:
         with pytest.raises(ModelError, match="HTTP 401"):
             await client.generate(problem)
+
+
+@pytest.mark.asyncio
+async def test_retries_transient_model_request_failure(problem: LeanProblem) -> None:
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise httpx.ConnectError("temporary connection failure", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "```lean4\ntheorem demo : True := by trivial\n```"
+                        },
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+    settings = load_settings(
+        env_file=None,
+        overrides={
+            "model": {"name": "prover", "max_retries": 2},
+            "retry": {"backoff_seconds": 0},
+        },
+    )
+    async with OpenAICompatibleClient(
+        settings, transport=httpx.MockTransport(handler)
+    ) as client:
+        generation = await client.generate(problem)
+
+    assert generation.content.endswith("by trivial\n")
+    assert calls == 3
+
+
+@pytest.mark.asyncio
+async def test_stops_model_retries_at_configured_maximum(problem: LeanProblem) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("still unavailable", request=request)
+
+    settings = load_settings(
+        env_file=None,
+        overrides={
+            "model": {"name": "prover", "max_retries": 2},
+            "retry": {"backoff_seconds": 0},
+        },
+    )
+    async with OpenAICompatibleClient(
+        settings, transport=httpx.MockTransport(handler)
+    ) as client:
+        with pytest.raises(ModelError, match="model API request failed") as exc:
+            await client.generate(problem)
+
+    assert type(exc.value) is ModelError
+    assert calls == 3
 
 
 @pytest.mark.asyncio
@@ -118,7 +187,7 @@ async def test_reports_empty_reasoning_response_without_exposing_reasoning(
             },
         )
     )
-    settings = Settings(_env_file=None, model_name="prover")
+    settings = load_settings(env_file=None, overrides={"model": {"name": "prover"}})
     async with OpenAICompatibleClient(settings, transport=transport) as client:
         with pytest.raises(ModelError, match=r"finish_reason='length'.*reasoning_chars=24") as exc:
             await client.generate(problem)

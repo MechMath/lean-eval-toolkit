@@ -64,7 +64,7 @@ def test_run_command_wires_dataset_and_cli_overrides(
     assert problem.dataset == "manual"
     assert problem.environment == "lean-4.28.0"
     assert captured["environment_override"] == "lean-4.28.0"
-    assert captured["settings"].eval_attempts == 2
+    assert captured["settings"].evaluation.attempts == 2
 
 
 def test_run_command_explains_missing_model_name(

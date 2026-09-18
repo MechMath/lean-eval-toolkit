@@ -7,8 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
     "axiom-axle>=1.7.0,<2",
     "httpx>=0.28.1,<1",
+    "omegaconf>=2.3,<3",
     "pydantic>=2.11,<3",
-    "pydantic-settings>=2.10,<3",
+    "python-dotenv>=1.1,<2",
     "rich>=14.0,<15",
     "typer>=0.16,<1",
 ]

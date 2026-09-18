@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from lean_eval_toolkit.config import Settings
+from lean_eval_toolkit.config import load_settings
 from lean_eval_toolkit.datasets import LeanProblem
 from lean_eval_toolkit.evaluation import RunWriter, evaluate
 from lean_eval_toolkit.model import Generation
@@ -65,11 +65,12 @@ async def test_evaluate_records_generation_errors() -> None:
 
 @pytest.mark.asyncio
 async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
-    settings = Settings(
-        _env_file=None,
-        model_name="org/model",
-        eval_results_dir=tmp_path,
-        eval_attempts=1,
+    settings = load_settings(
+        env_file=None,
+        overrides={
+            "model": {"name": "org/model"},
+            "evaluation": {"results_dir": str(tmp_path), "attempts": 1},
+        },
     )
     writer = RunWriter(
         settings,

@@ -2,13 +2,30 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from axle import AxleClient
+from axle.exceptions import (
+    AxleInternalError,
+    AxleIsUnavailable,
+    AxleRateLimitedError,
+    AxleRuntimeError,
+)
 
 from lean_eval_toolkit.config import Settings
 from lean_eval_toolkit.datasets import LeanProblem
+
+logger = logging.getLogger(__name__)
+
+_RETRYABLE_AXLE_ERRORS = (
+    AxleIsUnavailable,
+    AxleInternalError,
+    AxleRateLimitedError,
+    AxleRuntimeError,
+)
 
 
 @dataclass(slots=True)
@@ -33,10 +50,10 @@ class AxleVerifier:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._client = AxleClient(
-            url=settings.axle_api_url,
-            api_key=settings.axle_api_key.get_secret_value() or None,
-            max_concurrency=settings.eval_concurrency,
-            base_timeout_seconds=settings.axle_timeout_seconds,
+            url=settings.axle.api_url,
+            api_key=settings.axle.api_key.get_secret_value() or None,
+            max_concurrency=settings.evaluation.concurrency,
+            base_timeout_seconds=settings.axle.timeout_seconds,
         )
 
     async def __aenter__(self) -> AxleVerifier:
@@ -49,20 +66,38 @@ class AxleVerifier:
         await self._client.close()
 
     async def verify(self, problem: LeanProblem, candidate: str) -> Verification:
-        environment = problem.environment or self.settings.axle_environment
+        environment = problem.environment or self.settings.axle.environment
         if not environment:
             raise ValueError(
                 f"problem {problem.id!r} has no Lean environment; add an `environment` field, "
                 "a lean-toolchain file, or AXLE_ENVIRONMENT fallback"
             )
-        result = await self._client.verify_proof(
-            formal_statement=problem.formal_statement,
-            content=candidate,
-            environment=environment,
+        request = {
+            "formal_statement": problem.formal_statement,
+            "content": candidate,
+            "environment": environment,
             # Never permit benchmark placeholders in a successful candidate.
-            permitted_sorries=[],
-            timeout_seconds=self.settings.axle_timeout_seconds,
-        )
+            "permitted_sorries": [],
+            "timeout_seconds": self.settings.axle.timeout_seconds,
+        }
+        for retry in range(self.settings.axle.max_retries + 1):
+            try:
+                result = await self._client.verify_proof(**request)
+                break
+            except _RETRYABLE_AXLE_ERRORS as exc:
+                if retry == self.settings.axle.max_retries:
+                    raise
+                delay = self.settings.retry.backoff_seconds * (2**retry)
+                logger.warning(
+                    "AXLE request failed; retrying %s/%s in %.2fs: %s",
+                    retry + 1,
+                    self.settings.axle.max_retries,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+        else:
+            raise AssertionError("unreachable")
         passed = result.okay and not result.failed_declarations
         return Verification(
             passed=passed,

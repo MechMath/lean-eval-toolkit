@@ -10,7 +10,7 @@ from rich.progress import Progress
 from rich.table import Table
 
 from lean_eval_toolkit import __version__
-from lean_eval_toolkit.config import Settings
+from lean_eval_toolkit.config import Settings, load_settings
 from lean_eval_toolkit.datasets import BUILTIN_DATASETS, DatasetError, load_dataset, write_jsonl
 from lean_eval_toolkit.evaluation import AttemptResult, RunWriter, evaluate
 from lean_eval_toolkit.model import OpenAICompatibleClient
@@ -106,8 +106,8 @@ async def _run_evaluation(
             problems,
             model,
             verifier,
-            attempts=settings.eval_attempts,
-            concurrency=settings.eval_concurrency,
+            attempts=settings.evaluation.attempts,
+            concurrency=settings.evaluation.concurrency,
             on_result=lambda result: _append_and_report(writer, report, result),
         )
     writer.write_summary(summary)
@@ -151,7 +151,7 @@ def run_evaluation(
 ) -> None:
     """Generate remote-model proofs and verify them with AXLE."""
     try:
-        settings = Settings()
+        settings = load_settings()
         settings.require_model_name()
         problems = load_dataset(source, dataset=name.lower())
     except (DatasetError, ValueError) as exc:
@@ -171,12 +171,12 @@ def run_evaluation(
         for problem in problems:
             problem.environment = environment
     if attempts is not None:
-        settings.eval_attempts = attempts
+        settings.evaluation.attempts = attempts
     if concurrency is not None:
-        settings.eval_concurrency = concurrency
+        settings.evaluation.concurrency = concurrency
     if results_dir is not None:
-        settings.eval_results_dir = results_dir
-    total = len(problems) * settings.eval_attempts
+        settings.evaluation.results_dir = results_dir
+    total = len(problems) * settings.evaluation.attempts
     with Progress(console=console) as progress:
         task = progress.add_task("Starting evaluation", total=total)
         try:
@@ -190,6 +190,6 @@ def run_evaluation(
             raise typer.Exit(130) from exc
     console.print(
         f"Solved [bold]{solved}/{problem_count}[/bold] problems; "
-        f"pass@{settings.eval_attempts} = [bold]{pass_at_k:.2%}[/bold]"
+        f"pass@{settings.evaluation.attempts} = [bold]{pass_at_k:.2%}[/bold]"
     )
     console.print(f"Results: {output}")

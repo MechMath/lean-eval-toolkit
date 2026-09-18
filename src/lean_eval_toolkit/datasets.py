@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from lean_eval_toolkit.config import load_dataset_settings
 from lean_eval_toolkit.sft_format import split_source_header
 
 
@@ -38,19 +39,10 @@ class LeanProblem(BaseModel):
         return value
 
 
-BUILTIN_DATASETS: dict[str, dict[str, str]] = {
-    "minif2f": {
-        "description": "Olympiad-level miniF2F problems translated to Lean 4",
-        "upstream": "https://github.com/google-deepmind/miniF2F",
-        "layout": "JSONL export or a checkout containing MiniF2F/Valid.lean and Test.lean",
-        "fallback_environment": "lean-4.27.0",
-    },
-    "putnambench": {
-        "description": "Putnam competition problems formalized in Lean 4",
-        "upstream": "https://github.com/trishullab/PutnamBench",
-        "layout": "Repository checkout; Lean tasks are read from lean4/src/*.lean",
-        "fallback_environment": "lean-4.30.0",
-    },
+_DATASET_SETTINGS = load_dataset_settings()
+BUILTIN_DATASETS: dict[str, dict[str, Any]] = {
+    name: definition.model_dump(exclude_none=True)
+    for name, definition in _DATASET_SETTINGS.items()
 }
 
 _ID_KEYS = ("id", "name", "problem_id")
@@ -61,10 +53,11 @@ _MINIF2F_THEOREM = re.compile(
     r"(?m)^theorem\s+(?P<name>[A-Za-z0-9_'.]+)\b"
 )
 _SORRY_LINE = re.compile(r"(?m)^\s+sorry\s*$")
-_MINIF2F_UPSTREAM_IMPORT = "import MiniF2F.ProblemImports"
-_MINIF2F_TEST_IMPORT = "import Mathlib"
-_MINIF2F_TEST_ENVIRONMENT = "lean-4.30.0"
-_PUTNAMBENCH_ENVIRONMENT = "lean-4.30.0"
+_MINIF2F_UPSTREAM_IMPORT = f"import {_DATASET_SETTINGS['minif2f'].imports['upstream']}"
+_MINIF2F_TEST_IMPORT = f"import {_DATASET_SETTINGS['minif2f'].imports['test']}"
+_MINIF2F_TEST_ENVIRONMENT = _DATASET_SETTINGS["minif2f"].environments["test"]
+_PUTNAMBENCH_IMPORT = _DATASET_SETTINGS["putnambench"].imports["test"]
+_PUTNAMBENCH_ENVIRONMENT = _DATASET_SETTINGS["putnambench"].environments["test"]
 _PUTNAM_1966_B5_OLD = "s.toSet"
 _PUTNAM_1966_B5_NEW = "(s : Set (EuclideanSpace ℝ (Fin 2)))"
 
@@ -208,7 +201,7 @@ def _minif2f_problems(
             "status": "verified",
             "checked_at": "2026-09-17",
             "environment": _MINIF2F_TEST_ENVIRONMENT,
-            "import": "Mathlib",
+            "import": _DATASET_SETTINGS["minif2f"].imports["test"],
         }
     else:
         compatibility = {
@@ -291,7 +284,7 @@ def load_lean_files(
                     "status": "verified",
                     "checked_at": "2026-09-17",
                     "environment": _PUTNAMBENCH_ENVIRONMENT,
-                    "import": "Mathlib",
+                    "import": _PUTNAMBENCH_IMPORT,
                 },
                 **({"compatibility_transformations": transformations} if transformations else {}),
             }

@@ -40,15 +40,27 @@ cp .env.example .env
 
 ## 配置
 
-本地 vLLM-compatible 端点：
+非敏感默认值保存在 [`conf/default.yaml`](src/lean_eval_toolkit/conf/default.yaml)，其中包含
+`model`、`axle`、`retry` 和 `evaluation` 配置，并通过下面的方式引入独立数据集注册表：
 
-```dotenv
-MODEL_BASE_URL=http://localhost:8000/v1
-MODEL_API_KEY=
-MODEL_NAME=Qwen/Qwen3-8B
+```yaml
+includes:
+  - datasets.yaml
 ```
 
-DeepSeek：
+内置数据集的说明、布局、各 split 环境和 import 模块策略保存在
+[`conf/datasets.yaml`](src/lean_eval_toolkit/conf/datasets.yaml)。OmegaConf 会先合并所有引入的
+YAML，再由 Pydantic 校验完整配置结构。
+
+`.env` 只保存密钥和部署身份。使用默认本地 vLLM-compatible 端点时：
+
+```dotenv
+MODEL_NAME=Qwen/Qwen3-8B
+MODEL_API_KEY=
+AXLE_API_KEY=
+```
+
+部署相关的环境变量仍可覆盖 YAML。使用 DeepSeek 时：
 
 ```dotenv
 MODEL_BASE_URL=https://api.deepseek.com/v1
@@ -56,18 +68,18 @@ MODEL_API_KEY=replace-me
 MODEL_NAME=deepseek-chat
 ```
 
-提供商特有参数和请求头可通过 `MODEL_EXTRA_BODY`、`MODEL_EXTRA_HEADERS` 以 JSON 提供。
-AXLE 单独配置：
+通过 `LEAN_EVAL_CONFIG=/path/to/config.yaml` 可以选择其他根 YAML；其中 `includes` 的相对路径
+以该文件所在目录为基准。配置优先级依次为显式 CLI 覆盖、进程环境变量、`.env`、合并后的
+YAML 默认值。
 
-```dotenv
-AXLE_API_URL=https://axle.axiommath.ai
-AXLE_API_KEY=
-AXLE_ENVIRONMENT=
-AXLE_TIMEOUT_SECONDS=900
-```
+原有的 `MODEL_*`、`AXLE_*`、`RETRY_BACKOFF_SECONDS` 和 `EVAL_*` 环境变量继续作为覆盖项。
+提供商特有参数和请求头通过 `MODEL_EXTRA_BODY`、`MODEL_EXTRA_HEADERS` 以 JSON 提供。
+`AXLE_ENVIRONMENT` 仅用于没有版本信息的自定义题目。`.env`、`results/` 和临时上游 checkout
+均被 Git 忽略。
 
-`AXLE_ENVIRONMENT` 仅用于没有版本信息的自定义题目。内置记录均有独立 `environment`；从仓库
-导入时则读取 `lean-toolchain`。`.env`、`results/` 和临时上游 checkout 均被 Git 忽略。
+`MODEL_MAX_RETRIES` 和 `AXLE_MAX_RETRIES` 表示首次请求失败后最多重试的次数。模型网络错误、
+HTTP 429/5xx，以及可重试的 AXLE 服务端错误会从 `RETRY_BACKOFF_SECONDS` 开始进行指数退避；
+无效请求和普通 Lean 验证失败不会重试。
 
 ## 运行评测
 

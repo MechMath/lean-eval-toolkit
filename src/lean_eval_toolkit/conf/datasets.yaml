@@ -1,0 +1,22 @@
+datasets:
+  minif2f:
+    description: Olympiad-level miniF2F problems translated to Lean 4
+    upstream: https://github.com/google-deepmind/miniF2F
+    layout: JSONL export or a checkout containing MiniF2F/Valid.lean and Test.lean
+    fallback_environment: lean-4.27.0
+    environments:
+      validation: lean-4.27.0
+      test: lean-4.30.0
+    imports:
+      upstream: MiniF2F.ProblemImports
+      test: Mathlib
+
+  putnambench:
+    description: Putnam competition problems formalized in Lean 4
+    upstream: https://github.com/trishullab/PutnamBench
+    layout: Repository checkout; Lean tasks are read from lean4/src/*.lean
+    fallback_environment: lean-4.30.0
+    environments:
+      test: lean-4.30.0
+    imports:
+      test: Mathlib
