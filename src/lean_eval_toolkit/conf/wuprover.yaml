@@ -1,0 +1,26 @@
+includes:
+  - datasets.yaml
+
+model:
+  base_url: http://localhost:8321/v1
+  name: Wuprover
+  timeout_seconds: 3000
+  max_retries: 2
+  max_tokens: 30000
+  temperature: 1.0
+  extra_body: {"top_p":0.95}
+  extra_headers: {}
+
+axle:
+  api_url: https://axle.axiommath.ai
+  environment: null
+  timeout_seconds: 900
+  max_retries: 2
+
+retry:
+  backoff_seconds: 1
+
+evaluation:
+  concurrency: 8
+  attempts: 4
+  results_dir: results
