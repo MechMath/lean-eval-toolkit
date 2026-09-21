@@ -14,6 +14,7 @@ from lean_eval_toolkit.config import Settings, load_settings
 from lean_eval_toolkit.datasets import BUILTIN_DATASETS, DatasetError, load_dataset, write_jsonl
 from lean_eval_toolkit.evaluation import AttemptResult, RunWriter, evaluate
 from lean_eval_toolkit.model import OpenAICompatibleClient
+from lean_eval_toolkit.test_templates import TestTemplateError, load_test_template
 from lean_eval_toolkit.verifier import AxleVerifier
 
 app = typer.Typer(
@@ -85,6 +86,7 @@ async def _run_evaluation(
     progress: Progress,
     progress_task: int,
 ) -> tuple[Path, float, int, int]:
+    test_template = load_test_template(settings.evaluation.test_template)
     writer = RunWriter(
         settings,
         dataset_source=source,
@@ -101,7 +103,9 @@ async def _run_evaluation(
             else f"[red]failed[/red] {result.problem_id}",
         )
 
-    async with OpenAICompatibleClient(settings) as model, AxleVerifier(settings) as verifier:
+    async with OpenAICompatibleClient(
+        settings, test_template=test_template
+    ) as model, AxleVerifier(settings) as verifier:
         _, summary = await evaluate(
             problems,
             model,
@@ -148,6 +152,13 @@ def run_evaluation(
     results_dir: Annotated[
         Path | None, typer.Option(help="Output root; overrides EVAL_RESULTS_DIR.")
     ] = None,
+    test_template: Annotated[
+        str | None,
+        typer.Option(
+            "--test-template",
+            help="Built-in test-template ID or YAML path; overrides EVAL_TEST_TEMPLATE.",
+        ),
+    ] = None,
 ) -> None:
     """Generate remote-model proofs and verify them with AXLE."""
     try:
@@ -176,6 +187,8 @@ def run_evaluation(
         settings.evaluation.concurrency = concurrency
     if results_dir is not None:
         settings.evaluation.results_dir = results_dir
+    if test_template is not None:
+        settings.evaluation.test_template = test_template
     total = len(problems) * settings.evaluation.attempts
     with Progress(console=console) as progress:
         task = progress.add_task("Starting evaluation", total=total)
@@ -188,6 +201,9 @@ def run_evaluation(
                 "[yellow]Interrupted; completed attempts remain in the results directory.[/yellow]"
             )
             raise typer.Exit(130) from exc
+        except TestTemplateError as exc:
+            console.print(f"[red]Test template error:[/red] {exc}")
+            raise typer.Exit(2) from exc
     console.print(
         f"Solved [bold]{solved}/{problem_count}[/bold] problems; "
         f"pass@{settings.evaluation.attempts} = [bold]{pass_at_k:.2%}[/bold]"

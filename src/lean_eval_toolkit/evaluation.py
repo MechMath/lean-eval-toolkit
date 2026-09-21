@@ -36,6 +36,8 @@ class AttemptResult:
     raw_response: str | None = None
     finish_reason: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
+    extraction_strategy: str | None = None
+    used_extraction_fallback: bool = False
     verification: dict[str, Any] | None = None
     error_stage: str | None = None
     error: str | None = None
@@ -87,6 +89,8 @@ async def _one_attempt(
             result.raw_response = generation.raw_content
             result.finish_reason = generation.finish_reason
             result.usage = generation.usage
+            result.extraction_strategy = generation.extraction_strategy
+            result.used_extraction_fallback = generation.used_extraction_fallback
             started = time.perf_counter()
             try:
                 verification = await verifier.verify(problem, generation.content)
@@ -169,6 +173,8 @@ class RunWriter:
             ),
             "attempts": settings.evaluation.attempts,
             "concurrency": settings.evaluation.concurrency,
+            "test_template": settings.evaluation.test_template,
+            "model_chat_template_configured": settings.model.chat_template is not None,
         }
         (self.directory / "run.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

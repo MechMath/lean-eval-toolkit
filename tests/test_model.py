@@ -21,11 +21,11 @@ def problem() -> LeanProblem:
     )
 
 
-def test_build_prompt_includes_informal_statement_as_lean_comment(problem: LeanProblem) -> None:
+def test_build_prompt_uses_selected_test_template(problem: LeanProblem) -> None:
     prompt = build_prompt(problem)
     assert "Complete the following Lean 4 code:" in prompt
     assert problem.formal_statement.rstrip() in prompt
-    assert "-- Informal statement:\n-- Prove True.\n\nimport Mathlib" in prompt
+    assert "Informal statement" not in prompt
     assert prompt.endswith(
         "The plan should highlight key ideas, intermediate lemmas, and proof structures that will "
         "guide the construction of the final formal proof."
@@ -51,9 +51,15 @@ theorem final : True := by trivial
     assert extract_lean_code(response) == "theorem final : True := by trivial\n"
 
 
-def test_rejects_response_without_labelled_lean4_fence() -> None:
-    with pytest.raises(ModelError, match="fenced `lean4` code block"):
-        extract_lean_code("```lean\ntheorem x : True := by trivial\n```")
+def test_accepts_lean_fence_as_configured_fallback() -> None:
+    assert extract_lean_code("```lean\ntheorem x : True := by trivial\n```") == (
+        "theorem x : True := by trivial\n"
+    )
+
+
+def test_rejects_response_without_extractable_lean() -> None:
+    with pytest.raises(ModelError, match="did not match"):
+        extract_lean_code("I could not solve this problem.")
 
 
 @pytest.mark.asyncio
@@ -94,6 +100,45 @@ async def test_calls_openai_compatible_endpoint(problem: LeanProblem) -> None:
 
     assert generation.content.endswith("by trivial\n")
     assert generation.usage["completion_tokens"] == 8
+    assert generation.extraction_strategy == "final_lean4_fence"
+    assert generation.used_extraction_fallback
+
+
+@pytest.mark.asyncio
+async def test_passes_model_chat_template_without_rendering_special_tokens(
+    problem: LeanProblem,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = __import__("json").loads(request.content)
+        assert body["chat_template"] == "<bos>{{ messages }}<eos>"
+        assert "<bos>" not in body["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {"content": "theorem demo : True := by trivial"},
+                        "finish_reason": "stop",
+                    }
+                ]
+            },
+        )
+
+    settings = load_settings(
+        env_file=None,
+        overrides={
+            "model": {
+                "name": "prover",
+                "chat_template": "<bos>{{ messages }}<eos>",
+            }
+        },
+    )
+    async with OpenAICompatibleClient(
+        settings, transport=httpx.MockTransport(handler)
+    ) as client:
+        generation = await client.generate(problem)
+
+    assert generation.extraction_strategy == "raw_lean"
 
 
 @pytest.mark.asyncio

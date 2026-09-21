@@ -22,6 +22,7 @@ def test_settings_can_be_populated_from_environment(monkeypatch: pytest.MonkeyPa
     assert settings.axle.max_retries == 5
     assert settings.retry.backoff_seconds == 0.25
     assert settings.evaluation.results_dir == Path("artifacts")
+    assert settings.evaluation.test_template == "lean-cot-v1"
 
 
 def test_model_name_is_only_required_when_model_is_used() -> None:

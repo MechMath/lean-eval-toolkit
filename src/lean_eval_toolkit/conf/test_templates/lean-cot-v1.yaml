@@ -1,0 +1,61 @@
+schema_version: 1
+id: lean-cot-v1
+
+# These are benchmark/test fields. They are unrelated to the tokenizer chat
+# template that adds model-specific BOS/EOS and role special tokens.
+fields:
+  formal_statement:
+    source: formal_statement
+    transforms:
+      - rstrip
+
+messages:
+  - role: user
+    content: |-
+      Complete the following Lean 4 code:
+
+      ```lean4
+      ${formal_statement}```
+
+      Before producing the Lean 4 code to formally prove the given theorem, provide a detailed proof plan outlining the main proof steps and strategies.
+      The plan should highlight key ideas, intermediate lemmas, and proof structures that will guide the construction of the final formal proof.
+
+output:
+  primary:
+    type: section_fenced_code
+    name: strict_complete_section
+    heading: "### Complete Lean 4 Proof"
+    required_headings:
+      - "### Detailed Proof"
+    languages:
+      - lean4
+    require_terminal: true
+    case_sensitive: true
+
+  # Ordered from closest to the training contract to most permissive. The
+  # selected strategy is recorded in every evaluation result.
+  fallbacks:
+    - type: section_fenced_code_relaxed
+      name: relaxed_complete_section
+      heading: "### Complete Lean 4 Proof"
+      languages:
+        - lean4
+      case_sensitive: false
+    - type: last_fenced_code
+      name: final_lean4_fence
+      languages:
+        - lean4
+      case_sensitive: false
+    - type: last_fenced_code
+      name: final_lean_or_unlabelled_fence
+      languages:
+        - lean
+        - lean 4
+        - ""
+      case_sensitive: false
+    - type: section_raw_lean
+      name: raw_lean_after_complete_heading
+      heading: "### Complete Lean 4 Proof"
+      case_sensitive: false
+    - type: raw_lean
+      name: raw_lean

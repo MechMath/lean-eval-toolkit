@@ -25,6 +25,9 @@ class ModelSettings(BaseModel):
     max_retries: int = Field(ge=0)
     max_tokens: int = Field(gt=0)
     temperature: float = Field(ge=0)
+    # A tokenizer/provider chat template is passed through to the model server.
+    # It is never used to render benchmark messages inside this toolkit.
+    chat_template: str | None = None
     extra_body: dict[str, object] = Field(default_factory=dict)
     extra_headers: dict[str, str] = Field(default_factory=dict)
 
@@ -51,6 +54,7 @@ class EvaluationSettings(BaseModel):
     concurrency: int = Field(gt=0)
     attempts: int = Field(gt=0)
     results_dir: Path
+    test_template: str = "lean-cot-v1"
 
 
 class DatasetSettings(BaseModel):
@@ -89,6 +93,7 @@ _ENV_PATHS = {
     "MODEL_MAX_RETRIES": "model.max_retries",
     "MODEL_MAX_TOKENS": "model.max_tokens",
     "MODEL_TEMPERATURE": "model.temperature",
+    "MODEL_CHAT_TEMPLATE": "model.chat_template",
     "MODEL_EXTRA_BODY": "model.extra_body",
     "MODEL_EXTRA_HEADERS": "model.extra_headers",
     "AXLE_API_URL": "axle.api_url",
@@ -100,9 +105,10 @@ _ENV_PATHS = {
     "EVAL_CONCURRENCY": "evaluation.concurrency",
     "EVAL_ATTEMPTS": "evaluation.attempts",
     "EVAL_RESULTS_DIR": "evaluation.results_dir",
+    "EVAL_TEST_TEMPLATE": "evaluation.test_template",
 }
 _JSON_ENV_VARS = {"MODEL_EXTRA_BODY", "MODEL_EXTRA_HEADERS"}
-_OPTIONAL_ENV_VARS = {"MODEL_NAME", "AXLE_ENVIRONMENT"}
+_OPTIONAL_ENV_VARS = {"MODEL_NAME", "MODEL_CHAT_TEMPLATE", "AXLE_ENVIRONMENT"}
 
 
 def _load_yaml(path: Path, stack: tuple[Path, ...] = ()) -> DictConfig:

@@ -52,6 +52,55 @@ includes:
 [`conf/datasets.yaml`](src/lean_eval_toolkit/conf/datasets.yaml)。OmegaConf 会先合并所有引入的
 YAML，再由 Pydantic 校验完整配置结构。
 
+测试模板与模型/tokenizer 的 chat template 是两个独立层次。测试模板负责把题目字段渲染成
+OpenAI-compatible `messages` 并从回复中读取 Lean；模型 chat template 则由推理服务/tokenizer
+应用，负责 BOS/EOS 和角色 special token。toolkit 可以把显式配置的 `model.chat_template` 传给
+模型端点，但不会用它拼接测试文本。
+
+默认测试模板是内置的
+[`lean-cot-v1.yaml`](src/lean_eval_toolkit/conf/test_templates/lean-cot-v1.yaml)：
+
+```yaml
+model:
+  chat_template: null       # 可选的模型/tokenizer 模板
+
+evaluation:
+  test_template: lean-cot-v1  # 内置 ID 或 YAML 文件路径
+```
+
+自定义测试模板通过 `fields` 将规范化 JSONL 字段映射到占位符：
+
+```yaml
+schema_version: 1
+id: my-lean-format
+fields:
+  statement:
+    source: formal_statement
+    transforms: [rstrip]
+  hint:
+    source: metadata.hint
+    required: false
+    default: ""
+messages:
+  - role: system
+    content: "Return a complete Lean proof."
+  - role: user
+    content: "${hint}\n${statement}"
+output:
+  primary:
+    type: last_fenced_code
+    languages: [lean4]
+  fallbacks:
+    - type: last_fenced_code
+      languages: [lean, ""]
+    - type: raw_lean
+```
+
+`formal_statement`、`informal_statement`、`id`、`environment` 等规范字段可以直接映射。
+导入 JSONL 时无法识别的顶层字段会保存在 `metadata`，因此原始的 `hint` 应写成
+`metadata.hint`。目前支持 `strip`、`rstrip`、`lean_comment` 和 `json` 转换。只有主解析器
+失败时才会按声明顺序执行 fallback；实际采用的策略及是否发生降级会写入每条评测结果。
+
 `.env` 只保存密钥和部署身份。使用默认本地 vLLM-compatible 端点时：
 
 ```dotenv
@@ -74,8 +123,9 @@ YAML 默认值。
 
 原有的 `MODEL_*`、`AXLE_*`、`RETRY_BACKOFF_SECONDS` 和 `EVAL_*` 环境变量继续作为覆盖项。
 提供商特有参数和请求头通过 `MODEL_EXTRA_BODY`、`MODEL_EXTRA_HEADERS` 以 JSON 提供。
-`AXLE_ENVIRONMENT` 仅用于没有版本信息的自定义题目。`.env`、`results/` 和临时上游 checkout
-均被 Git 忽略。
+`MODEL_CHAT_TEMPLATE` 和 `EVAL_TEST_TEMPLATE` 分别选择上述两个独立的模板层。
+`AXLE_ENVIRONMENT` 仅用于没有版本信息的自定义题目。`.env`、`results/` 和临时上游
+checkout 均被 Git 忽略。
 
 `MODEL_MAX_RETRIES` 和 `AXLE_MAX_RETRIES` 表示首次请求失败后最多重试的次数。模型网络错误、
 HTTP 429/5xx，以及可重试的 AXLE 服务端错误会从 `RETRY_BACKOFF_SECONDS` 开始进行指数退避；
@@ -117,11 +167,11 @@ uv run lean-eval run data/minif2f/problems.jsonl \
 优先级为 `--environment` > 数据记录中的 `environment` > `AXLE_ENVIRONMENT` 回退值。覆盖仅对
 本次运行生效，不修改固定版本的 JSONL，并会记录在 `run.json` 中。
 
-模型请求与 SFT 数据使用相同的对话格式：仅包含一条 `user` 消息，以
+默认测试模板与 SFT 数据使用相同的对话格式：仅包含一条 `user` 消息，以
 `Complete the following Lean 4 code:` 开头，随后是 `lean4` 代码块和详细证明计划要求。模型
-数据若带有 informal 表述（例如 miniF2F），会以 Lean `--` 行注释的形式插入该代码块开头。
-模型回复可以包含所要求的推理过程，但必须以显式标记为 `lean4` 的代码块结尾；工具会提取
-最后一个这样的代码块并将其发送给 AXLE 验证。
+回复首先按训练格式读取精确的 `### Complete Lean 4 Proof` section；严格解析失败后，再依次
+尝试宽松 section、最后一个 `lean4`/`lean` 或无标签 fence，以及可识别的纯 Lean 文本。
+fallback 只提高读取容错性，最终证明仍必须通过 AXLE。
 
 源文件开头的 copyright、release、license 和 author 声明会作为来源信息保存在
 `metadata.source_header`，并从 `formal_statement` 中移除，不会发送给待测模型。

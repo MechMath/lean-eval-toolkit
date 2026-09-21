@@ -11,11 +11,10 @@ import httpx
 
 from lean_eval_toolkit.config import Settings
 from lean_eval_toolkit.datasets import LeanProblem
-from lean_eval_toolkit.sft_format import (
-    SFTFormatError,
-    build_sft_messages,
-    build_sft_prompt,
-    extract_sft_lean_code,
+from lean_eval_toolkit.test_templates import (
+    TestTemplate,
+    TestTemplateError,
+    load_test_template,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,18 +34,25 @@ class Generation:
     raw_content: str
     finish_reason: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
+    extraction_strategy: str | None = None
+    used_extraction_fallback: bool = False
 
 
-def build_prompt(problem: LeanProblem) -> str:
-    """Build the user prompt used during supervised fine-tuning."""
-    return build_sft_prompt(problem.formal_statement, problem.informal_statement)
+def build_prompt(problem: LeanProblem, template: TestTemplate | None = None) -> str:
+    """Build the single-user prompt for compatibility with existing callers."""
+    selected = template or load_test_template("lean-cot-v1")
+    messages = selected.render(problem)
+    if len(messages) != 1 or messages[0]["role"] != "user":
+        raise ModelError("build_prompt requires a test template with one user message")
+    return messages[0]["content"]
 
 
-def extract_lean_code(response: str) -> str:
-    """Extract the final ``lean4`` block required by the SFT response format."""
+def extract_lean_code(response: str, template: TestTemplate | None = None) -> str:
+    """Extract Lean code using a test template and its configured fallbacks."""
     try:
-        return extract_sft_lean_code(response)
-    except SFTFormatError as exc:
+        selected = template or load_test_template("lean-cot-v1")
+        return selected.extract(response).code
+    except TestTemplateError as exc:
         raise ModelError(str(exc)) from exc
 
 
@@ -63,8 +69,17 @@ def _message_text(content: Any) -> str:
 class OpenAICompatibleClient:
     """Minimal chat-completions client suitable for vLLM and commercial APIs."""
 
-    def __init__(self, settings: Settings, *, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        test_template: TestTemplate | None = None,
+    ):
         self.settings = settings
+        self.test_template = test_template or load_test_template(
+            settings.evaluation.test_template
+        )
         headers = dict(settings.model.extra_headers)
         api_key = settings.model.api_key.get_secret_value()
         if api_key:
@@ -123,13 +138,12 @@ class OpenAICompatibleClient:
     async def generate(self, problem: LeanProblem) -> Generation:
         payload: dict[str, Any] = {
             "model": self.settings.require_model_name(),
-            "messages": build_sft_messages(
-                problem.formal_statement,
-                problem.informal_statement,
-            ),
+            "messages": self.test_template.render(problem),
             "temperature": self.settings.model.temperature,
             "max_tokens": self.settings.model.max_tokens,
         }
+        if self.settings.model.chat_template is not None:
+            payload["chat_template"] = self.settings.model.chat_template
         payload.update(self.settings.model.extra_body)
         data = await self._request_with_retries(payload)
         try:
@@ -151,9 +165,15 @@ class OpenAICompatibleClient:
                 f"(finish_reason={choice.get('finish_reason')!r}, "
                 f"reasoning_chars={reasoning_chars})"
             )
+        try:
+            extracted = self.test_template.extract(raw_content)
+        except TestTemplateError as exc:
+            raise ModelError(str(exc)) from exc
         return Generation(
-            content=extract_lean_code(raw_content),
+            content=extracted.code,
             raw_content=raw_content,
             finish_reason=choice.get("finish_reason"),
             usage=usage,
+            extraction_strategy=extracted.strategy,
+            used_extraction_fallback=extracted.used_fallback,
         )

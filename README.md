@@ -54,6 +54,58 @@ Built-in dataset descriptions, layouts, split environments, and import-module po
 [`conf/datasets.yaml`](src/lean_eval_toolkit/conf/datasets.yaml). OmegaConf merges included YAML
 files before Pydantic validates the complete structure.
 
+Evaluation test templates are separate from model/tokenizer chat templates. The former render
+benchmark fields into OpenAI-compatible `messages` and extract Lean from the response. The latter
+are provider/tokenizer Jinja templates responsible for BOS/EOS and role special tokens. The
+toolkit sends an explicitly configured `model.chat_template` to the model endpoint but never uses
+it to render benchmark text itself.
+
+The default test template is the built-in `lean-cot-v1` definition at
+[`conf/test_templates/lean-cot-v1.yaml`](src/lean_eval_toolkit/conf/test_templates/lean-cot-v1.yaml):
+
+```yaml
+model:
+  chat_template: null  # optional provider/tokenizer template
+
+evaluation:
+  test_template: lean-cot-v1  # built-in ID or YAML path
+```
+
+A custom test-template YAML maps named placeholders to normalized JSONL fields:
+
+```yaml
+schema_version: 1
+id: my-lean-format
+fields:
+  statement:
+    source: formal_statement
+    transforms: [rstrip]
+  hint:
+    source: metadata.hint
+    required: false
+    default: ""
+messages:
+  - role: system
+    content: "Return a complete Lean proof."
+  - role: user
+    content: "${hint}\n${statement}"
+output:
+  primary:
+    type: last_fenced_code
+    languages: [lean4]
+  fallbacks:
+    - type: last_fenced_code
+      languages: [lean, ""]
+    - type: raw_lean
+```
+
+Canonical `LeanProblem` fields such as `formal_statement`, `informal_statement`, `id`, and
+`environment` can be mapped directly. Unrecognized top-level fields from an imported JSONL row
+are preserved under `metadata`, so a source key such as `hint` is mapped as `metadata.hint`.
+Supported transforms are `strip`, `rstrip`, `lean_comment`, and `json`. Fallback extractors run in
+declaration order only after the primary extractor fails; the selected strategy and whether a
+fallback was used are stored in each result row.
+
 Keep only secrets and deployment identity in `.env`. For the default local vLLM-compatible
 endpoint:
 
@@ -77,9 +129,10 @@ process environment, `.env`, then composed YAML defaults.
 
 The existing `MODEL_*`, `AXLE_*`, `RETRY_BACKOFF_SECONDS`, and `EVAL_*` variables remain supported
 as overrides. Provider-specific JSON parameters and headers use `MODEL_EXTRA_BODY` and
-`MODEL_EXTRA_HEADERS`. `AXLE_ENVIRONMENT` is only a fallback for custom tasks without version
-metadata. Secrets in `.env`, evaluation output in `results/`, and temporary upstream checkouts are
-ignored by Git.
+`MODEL_EXTRA_HEADERS`. `MODEL_CHAT_TEMPLATE` and `EVAL_TEST_TEMPLATE` select the two independent
+template layers. `AXLE_ENVIRONMENT` is only a fallback for custom tasks without version metadata.
+Secrets in `.env`, evaluation output in `results/`, and temporary upstream checkouts are ignored
+by Git.
 
 `MODEL_MAX_RETRIES` and `AXLE_MAX_RETRIES` count retries after the initial request. Transient model
 network errors, HTTP 429/5xx responses, and retryable AXLE server errors use exponential backoff
@@ -123,12 +176,13 @@ The precedence is `--environment` > the dataset record's `environment` > the
 `AXLE_ENVIRONMENT` fallback. The override applies only to the current run, does not modify the
 versioned JSONL snapshot, and is recorded in `run.json`.
 
-Model requests use the same chat format as the project's SFT data: one `user` message beginning
+The default test template uses the same message format as the project's SFT data: one `user`
+message beginning
 with `Complete the following Lean 4 code:`, followed by the source in a `lean4` fence and the
-detailed-proof-plan instruction. When a benchmark provides an informal statement (for example,
-miniF2F), it is prepended inside that fence as Lean `--` comments. Model responses may include the
-requested reasoning, but must end with an explicitly labelled `lean4` fenced block; that final
-block is the candidate sent to AXLE.
+detailed-proof-plan instruction. It first extracts the exact `### Complete Lean 4 Proof` section
+used by training. Configured fallbacks then accept a relaxed section, the final `lean4`/`lean` or
+unlabelled fence, and finally a response that is recognizable as raw Lean. This tolerance affects
+extraction only; AXLE still decides whether the resulting proof is valid.
 
 Source copyright, release, license, and author headers are stored as provenance in
 `metadata.source_header`; they are removed from `formal_statement` and are never sent to the model.

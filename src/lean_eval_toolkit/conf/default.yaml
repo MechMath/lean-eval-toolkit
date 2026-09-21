@@ -8,6 +8,9 @@ model:
   max_retries: 2
   max_tokens: 4096
   temperature: 0
+  # Optional tokenizer/provider chat template. The serving backend applies its
+  # BOS/EOS and role special tokens; lean-eval never renders these itself.
+  chat_template: null
   extra_body: {}
   extra_headers: {}
 
@@ -24,3 +27,5 @@ evaluation:
   concurrency: 4
   attempts: 1
   results_dir: results
+  # Benchmark message/output contract, separate from model.chat_template.
+  test_template: lean-cot-v1
