@@ -21,6 +21,14 @@ output:
     languages: [lean4]
     require_terminal: true
     case_sensitive: true
+  repair_primary:
+    type: section_fenced_code
+    name: strict_revised_lean_proof
+    heading: "### Lean Proof"
+    required_headings: ["### Revised Proof Plan"]
+    languages: [lean4]
+    require_terminal: true
+    case_sensitive: true
   fallbacks:
     - type: section_fenced_code_relaxed
       name: relaxed_lean_proof

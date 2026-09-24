@@ -9,6 +9,7 @@ from lean_eval_toolkit.model import (
     build_prompt,
     extract_lean_code,
 )
+from lean_eval_toolkit.test_templates import load_test_template
 
 
 @pytest.fixture
@@ -148,6 +149,30 @@ async def test_reports_model_http_error(problem: LeanProblem) -> None:
     async with OpenAICompatibleClient(settings, transport=transport) as client:
         with pytest.raises(ModelError, match="HTTP 401"):
             await client.generate(problem)
+
+
+@pytest.mark.asyncio
+async def test_repair_request_sends_history_and_uses_revised_heading(problem: LeanProblem) -> None:
+    template = load_test_template("lean-plan-repair-v3")
+    history = [
+        *template.render(problem),
+        {"role": "assistant", "content": "failed raw response"},
+        {"role": "tool", "content": "Lean compiler feedback:\n\nunknown tactic"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert __import__("json").loads(request.content)["messages"] == history
+        return httpx.Response(200, json={"choices": [{"message": {"content": (
+            "### Revised Proof Plan\nUse trivial.\n### Lean Proof\n"
+            "```lean4\ntheorem demo : True := by trivial\n```"
+        )}}]})
+
+    settings = load_settings(env_file=None, overrides={"model": {"name": "prover"}})
+    async with OpenAICompatibleClient(
+        settings, transport=httpx.MockTransport(handler), test_template=template
+    ) as client:
+        result = await client.generate(problem, messages=history, repair_round=1)
+    assert result.extraction_strategy == "strict_revised_lean_proof"
 
 
 @pytest.mark.asyncio

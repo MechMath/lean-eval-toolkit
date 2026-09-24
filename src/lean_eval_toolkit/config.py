@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import dotenv_values
 from omegaconf import DictConfig, OmegaConf
@@ -55,6 +55,8 @@ class EvaluationSettings(BaseModel):
     attempts: int = Field(gt=0)
     results_dir: Path
     test_template: str = "lean-cot-v1"
+    max_repair_rounds: int = Field(default=0, ge=0)
+    repair_feedback_role: Literal["tool", "user"] = "tool"
 
 
 class DatasetSettings(BaseModel):
@@ -106,6 +108,8 @@ _ENV_PATHS = {
     "EVAL_ATTEMPTS": "evaluation.attempts",
     "EVAL_RESULTS_DIR": "evaluation.results_dir",
     "EVAL_TEST_TEMPLATE": "evaluation.test_template",
+    "EVAL_MAX_REPAIR_ROUNDS": "evaluation.max_repair_rounds",
+    "EVAL_REPAIR_FEEDBACK_ROLE": "evaluation.repair_feedback_role",
 }
 _JSON_ENV_VARS = {"MODEL_EXTRA_BODY", "MODEL_EXTRA_HEADERS"}
 _OPTIONAL_ENV_VARS = {"MODEL_NAME", "MODEL_CHAT_TEMPLATE", "AXLE_ENVIRONMENT"}

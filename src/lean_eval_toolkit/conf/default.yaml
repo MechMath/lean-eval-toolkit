@@ -29,3 +29,5 @@ evaluation:
   results_dir: results
   # Benchmark message/output contract, separate from model.chat_template.
   test_template: lean-cot-v1
+  max_repair_rounds: 0
+  repair_feedback_role: tool

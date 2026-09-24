@@ -78,6 +78,7 @@ class OutputSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     primary: ExtractorSettings
+    repair_primary: ExtractorSettings | None = None
     fallbacks: list[ExtractorSettings] = Field(default_factory=list)
 
 
@@ -288,9 +289,13 @@ class TestTemplate:
             raise TestTemplateError("non-whitespace content follows the final code fence")
         return _normalize_code(match.group("code"))
 
-    def extract(self, response: str) -> ExtractionResult:
+    def extract(self, response: str, *, repair: bool = False) -> ExtractionResult:
         errors: list[str] = []
-        extractors = [self.settings.output.primary, *self.settings.output.fallbacks]
+        primary = (
+            self.settings.output.repair_primary or self.settings.output.primary
+            if repair else self.settings.output.primary
+        )
+        extractors = [primary, *self.settings.output.fallbacks]
         for index, extractor in enumerate(extractors):
             strategy = extractor.name or extractor.type
             try:

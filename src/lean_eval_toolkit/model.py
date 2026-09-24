@@ -135,10 +135,16 @@ class OpenAICompatibleClient:
                 await asyncio.sleep(delay)
         raise AssertionError("unreachable")
 
-    async def generate(self, problem: LeanProblem) -> Generation:
+    async def generate(
+        self,
+        problem: LeanProblem,
+        *,
+        messages: list[dict[str, str]] | None = None,
+        repair_round: int = 0,
+    ) -> Generation:
         payload: dict[str, Any] = {
             "model": self.settings.require_model_name(),
-            "messages": self.test_template.render(problem),
+            "messages": messages if messages is not None else self.test_template.render(problem),
             "temperature": self.settings.model.temperature,
             "max_tokens": self.settings.model.max_tokens,
         }
@@ -166,7 +172,7 @@ class OpenAICompatibleClient:
                 f"reasoning_chars={reasoning_chars})"
             )
         try:
-            extracted = self.test_template.extract(raw_content)
+            extracted = self.test_template.extract(raw_content, repair=repair_round > 0)
         except TestTemplateError as exc:
             raise ModelError(str(exc)) from exc
         return Generation(

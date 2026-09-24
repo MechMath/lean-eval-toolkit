@@ -74,6 +74,15 @@ v3 Plan-and-Repair 模型应选用 `evaluation.test_template: lean-plan-repair-v
 闭合且位于结尾的 `lean4` 代码块。宽松解析仍可作为降级路径，结果会记录解析策略及是否降级。
 旧模型可继续使用 `lean-cot-v1`。
 
+评测编译器反馈修复时，将 `evaluation.max_repair_rounds`（或 `--max-repair-rounds`）设为正数。
+`evaluation.attempts` 仍表示每题独立轨迹数，每条轨迹最多生成 `1 + max_repair_rounds` 次。
+普通 Lean 证明失败后，工具会把助手原始回复和包含
+`Lean compiler feedback:\n\n<诊断信息>` 的 `tool` 消息追加到完整对话，再请求下一轮。
+若服务端不接受没有结构化工具调用的 `tool` 消息，可设置
+`evaluation.repair_feedback_role: user`（或 `--repair-feedback-role user`）。v3 模板在修复轮
+要求 `### Revised Proof Plan`。证明通过立即停止；格式或服务错误终止当前轨迹，传输重试与
+修复轮数相互独立。默认修复预算为零，保持单次生成行为。
+
 自定义测试模板通过 `fields` 将规范化 JSONL 字段映射到占位符：
 
 ```yaml

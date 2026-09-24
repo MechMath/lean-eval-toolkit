@@ -6,6 +6,7 @@ from lean_eval_toolkit.config import load_settings
 from lean_eval_toolkit.datasets import LeanProblem
 from lean_eval_toolkit.evaluation import RunWriter, evaluate
 from lean_eval_toolkit.model import Generation
+from lean_eval_toolkit.test_templates import load_test_template
 from lean_eval_toolkit.verifier import Verification
 
 
@@ -61,6 +62,84 @@ async def test_evaluate_records_generation_errors() -> None:
     assert results[0].error_stage == "generation"
     assert "cannot generate one" in (results[0].error or "")
     assert summary.pass_at_k == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("feedback_role", ["tool", "user"])
+async def test_repair_keeps_full_history_and_stops_on_success(feedback_role: str) -> None:
+    problem = problems()[0]
+    failed_raw = (
+        "### Proof Plan\ntry simp\n### Lean Proof\n"
+        "```lean4\ntheorem one : True := by fail\n```"
+    )
+    passed_raw = (
+        "### Revised Proof Plan\nuse trivial\n### Lean Proof\n"
+        "```lean4\ntheorem one : True := by trivial\n```"
+    )
+
+    class RepairGenerator:
+        test_template = load_test_template("lean-plan-repair-v3")
+        calls: list[list[dict[str, str]]]
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def generate(
+            self, task: LeanProblem, *, messages: list[dict[str, str]] | None = None,
+            repair_round: int = 0,
+        ) -> Generation:
+            self.calls.append(messages or self.test_template.render(task))
+            raw = failed_raw if repair_round == 0 else passed_raw
+            extracted = self.test_template.extract(raw, repair=repair_round > 0)
+            return Generation(
+                content=extracted.code, raw_content=raw,
+                extraction_strategy=extracted.strategy,
+            )
+
+    class RepairVerifier:
+        async def verify(self, task: LeanProblem, candidate: str) -> Verification:
+            return Verification(
+                passed="trivial" in candidate, okay="trivial" in candidate,
+                lean_errors=[] if "trivial" in candidate else ["unknown tactic 'fail'"],
+            )
+
+    generator = RepairGenerator()
+    results, _ = await evaluate(
+        [problem], generator, RepairVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=3, repair_feedback_role=feedback_role,
+    )
+    assert len(generator.calls) == 2
+    assert generator.calls[1] == [
+        *generator.calls[0],
+        {"role": "assistant", "content": failed_raw},
+        {"role": feedback_role, "content": "Lean compiler feedback:\n\nunknown tactic 'fail'"},
+    ]
+    assert results[0].passed
+    assert [item.raw_response for item in results[0].rounds] == [failed_raw, passed_raw]
+    assert results[0].rounds[1].extraction_strategy == "strict_revised_lean_proof"
+
+
+@pytest.mark.asyncio
+async def test_repair_does_not_retry_generation_or_verifier_errors() -> None:
+    class FormatFailure:
+        async def generate(self, task: LeanProblem) -> Generation:
+            raise ValueError("response did not match template")
+
+    class ServiceFailure:
+        async def verify(self, task: LeanProblem, candidate: str) -> Verification:
+            raise RuntimeError("AXLE unavailable")
+
+    failed, _ = await evaluate(
+        problems()[:1], FormatFailure(), FakeVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=2,
+    )
+    unavailable, _ = await evaluate(
+        problems()[:1], FakeGenerator(), ServiceFailure(), attempts=1, concurrency=1,
+        max_repair_rounds=2,
+    )
+    assert len(failed[0].rounds) == len(unavailable[0].rounds) == 1
+    assert failed[0].error_stage == "generation"
+    assert unavailable[0].error_stage == "verification"
 
 
 @pytest.mark.asyncio

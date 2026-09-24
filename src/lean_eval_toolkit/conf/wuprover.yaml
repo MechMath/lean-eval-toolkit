@@ -25,3 +25,5 @@ evaluation:
   attempts: 4
   results_dir: results
   test_template: lean-plan-repair-v3
+  max_repair_rounds: 2
+  repair_feedback_role: tool

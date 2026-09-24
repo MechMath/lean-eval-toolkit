@@ -78,6 +78,17 @@ repeated imports. The strict response format is `### Proof Plan`, then `### Lean
 closed, terminal `lean4` fence. Relaxed extraction remains available, and each result records
 the selected strategy and fallback flag. `lean-cot-v1` remains available for older checkpoints.
 
+To evaluate compiler-feedback repair, set `evaluation.max_repair_rounds` (or
+`--max-repair-rounds`) above zero. Each of the `evaluation.attempts` samples remains an independent
+trajectory with at most `1 + max_repair_rounds` generations. After a Lean proof failure, the
+toolkit appends the assistant's raw response and a `tool` message containing
+`Lean compiler feedback:\n\n<diagnostics>`, then sends the full history for the next generation.
+Set `evaluation.repair_feedback_role: user` (or `--repair-feedback-role user`) for backends that
+reject tool messages without structured tool calls. The v3 template expects
+`### Revised Proof Plan` on repair turns. Successful proofs stop immediately; format and service
+errors stop the trajectory, while transport retries remain separate from repair rounds. The
+default repair budget is zero, preserving one-shot behavior.
+
 A custom test-template YAML maps named placeholders to normalized JSONL fields:
 
 ```yaml
