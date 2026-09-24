@@ -1,3 +1,5 @@
+import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -5,7 +7,7 @@ import pytest
 from lean_eval_toolkit.config import load_settings
 from lean_eval_toolkit.datasets import LeanProblem
 from lean_eval_toolkit.evaluation import RunWriter, evaluate
-from lean_eval_toolkit.model import Generation
+from lean_eval_toolkit.model import Generation, GenerationFormatError
 from lean_eval_toolkit.test_templates import load_test_template
 from lean_eval_toolkit.verifier import Verification
 
@@ -116,6 +118,9 @@ async def test_repair_keeps_full_history_and_stops_on_success(feedback_role: str
     ]
     assert results[0].passed
     assert [item.raw_response for item in results[0].rounds] == [failed_raw, passed_raw]
+    assert results[0].rounds[0].feedback == (
+        "Lean compiler feedback:\n\nunknown tactic 'fail'"
+    )
     assert results[0].rounds[1].extraction_strategy == "strict_revised_lean_proof"
 
 
@@ -140,6 +145,75 @@ async def test_repair_does_not_retry_generation_or_verifier_errors() -> None:
     assert len(failed[0].rounds) == len(unavailable[0].rounds) == 1
     assert failed[0].error_stage == "generation"
     assert unavailable[0].error_stage == "verification"
+
+
+@pytest.mark.asyncio
+async def test_mixed_repair_summary_and_round_usage() -> None:
+    class MixedGenerator:
+        test_template = load_test_template("lean-plan-repair-v3")
+
+        def __init__(self) -> None:
+            self.trajectory = {"one": 0, "two": 0}
+
+        async def generate(
+            self, task: LeanProblem, *, messages: list[dict[str, str]] | None = None,
+            repair_round: int = 0,
+        ) -> Generation:
+            if repair_round == 0:
+                self.trajectory[task.id] += 1
+            attempt = self.trajectory[task.id]
+            passed = (task.id, attempt, repair_round) in {
+                ("one", 1, 0), ("two", 1, 1), ("two", 2, 2),
+            }
+            fallback = task.id == "two" and attempt == 1 and repair_round == 0
+            return Generation(
+                content="pass" if passed else "fail",
+                raw_content=f"{task.id}/{attempt}/{repair_round}",
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+                extraction_strategy="fallback" if fallback else "strict",
+                used_extraction_fallback=fallback,
+            )
+
+    class MixedVerifier:
+        async def verify(self, task: LeanProblem, candidate: str) -> Verification:
+            return Verification(
+                passed=candidate == "pass", okay=candidate == "pass",
+                lean_errors=[] if candidate == "pass" else ["proof failed"],
+            )
+
+    results, summary = await evaluate(
+        problems(), MixedGenerator(), MixedVerifier(), attempts=2, concurrency=1,
+        max_repair_rounds=2,
+    )
+    assert summary.direct_pass_at_1 == summary.direct_pass_at_k == 0.5
+    assert summary.final_pass_at_1 == summary.final_pass_at_k == 1.0
+    assert summary.pass_at_k == 1.0
+    assert summary.problems_solved_before_repair == 1
+    assert summary.additional_problems_solved_after_repair == 1
+    assert [item["trajectories_reached"] for item in summary.success_by_round] == [4, 3, 2]
+    assert [item["success_count"] for item in summary.success_by_round] == [1, 1, 1]
+    assert [item["success_rate"] for item in summary.success_by_round] == [0.25, 1 / 3, 0.5]
+    assert summary.success_by_round[0]["strict_format_rate"] == 0.75
+    assert summary.success_by_round[0]["extraction_fallback_rate"] == 0.25
+    assert summary.average_repair_rounds_used == 1.25
+    assert summary.maximum_repair_rounds_used == 2
+    assert summary.total_prompt_tokens == 90
+    assert summary.total_completion_tokens == 45
+    assert sum(len(result.rounds) for result in results) == 9
+
+
+@pytest.mark.asyncio
+async def test_format_error_preserves_raw_response_and_usage() -> None:
+    class BadFormat:
+        async def generate(self, task: LeanProblem) -> Generation:
+            raise GenerationFormatError("bad format", "raw malformed", {"prompt_tokens": 7})
+
+    results, summary = await evaluate(
+        problems()[:1], BadFormat(), FakeVerifier(), attempts=1, concurrency=1,
+    )
+    assert results[0].rounds[0].raw_response == "raw malformed"
+    assert results[0].rounds[0].usage == {"prompt_tokens": 7}
+    assert summary.total_prompt_tokens == 7
 
 
 @pytest.mark.asyncio
@@ -170,3 +244,42 @@ async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
     assert '"environment_override": "lean-4.28.0"' in (
         writer.directory / "run.json"
     ).read_text(encoding="utf-8")
+    manifest = json.loads((writer.directory / "run.json").read_text(encoding="utf-8"))
+    assert manifest["test_template_id"] == "lean-cot-v1"
+    assert manifest["max_repair_rounds"] == 0
+    assert manifest["repair_feedback_role"] == "tool"
+    assert manifest["model_temperature"] == settings.model.temperature
+    saved = json.loads(writer.results_path.read_text(encoding="utf-8"))
+    assert saved["rounds"][0]["verification"]["passed"]
+
+
+@pytest.mark.asyncio
+async def test_interrupted_run_retains_completed_trajectories(tmp_path: Path) -> None:
+    settings = load_settings(
+        env_file=None, overrides={"evaluation": {"results_dir": str(tmp_path)}}
+    )
+    writer = RunWriter(settings, dataset_source=Path("tasks.jsonl"), problems=problems())
+    completed = asyncio.Event()
+    blocked = asyncio.Event()
+
+    class SlowGenerator(FakeGenerator):
+        async def generate(self, problem: LeanProblem) -> Generation:
+            if problem.id == "two":
+                await blocked.wait()
+            return await super().generate(problem)
+
+    async def save(result) -> None:
+        await writer.append(result)
+        completed.set()
+
+    task = asyncio.create_task(
+        evaluate(problems(), SlowGenerator(), FakeVerifier(), attempts=1, concurrency=1,
+                 on_result=save)
+    )
+    await asyncio.wait_for(completed.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    saved = writer.results_path.read_text(encoding="utf-8").splitlines()
+    assert len(saved) == 1
+    assert json.loads(saved[0])["problem_id"] == "one"

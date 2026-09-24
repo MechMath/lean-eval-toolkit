@@ -202,6 +202,23 @@ results/<UTC 时间>-<模型名>/
 
 每次尝试完成后会立即追加结果，因此中断不会丢失已经完成的记录。API key 不会写入产物。
 
+`results.jsonl` 每行是一条独立尝试/轨迹。按顺序排列的 `rounds` 包含从 0 开始的 `round`、
+`raw_response`、提取后的 `candidate`、`extraction_strategy`、`used_extraction_fallback`、
+含 Lean 诊断的 `verification`、传给下一轮的 `feedback`、`usage`、`generation_ms`、
+`verification_ms` 及错误字段。
+尝试顶层仍保留候选、通过状态、用量和耗时等兼容字段；顶层耗时为各轮总和，顶层用量为最后一次
+成功生成的回复。轨迹在首个通过轮停止；格式或服务错误会记录并终止轨迹。`run.json` 记录
+测试模板 ID、修复预算、反馈角色、模型服务配置、chat template 和 AXLE 设置，不记录 API key。
+
+`summary.json` 中的 `pass_at_k` 是 `final_pass_at_k` 的兼容别名。`direct_pass_at_1` 和
+`direct_pass_at_k` 只看第 0 轮；`final_pass_at_1` 和 `final_pass_at_k` 看任意成功轮。
+`@1` 取每题第 1 次独立尝试，`@k` 取配置的任意一次独立尝试；分母都是题目数。
+汇总还包括修复前解出的题数、修复后新增解出的题数、每条轨迹进入的修复轮数均值和最大值，以及
+`success_by_round`。每轮记录到达轨迹数、首次成功数；成功率、严格格式率和降级解析率均以
+到达轨迹数为分母，生成失败也计入分母。逐轮记录生成/验证耗时和 prompt/completion token
+总量；汇总提供所有轨迹总量和平均每轨迹耗时。`max_repair_rounds=0` 时直接与最终指标相同，
+原有 pass@k 含义不变。
+
 ## 添加或更新数据集
 
 查看支持的布局并导入自定义数据：

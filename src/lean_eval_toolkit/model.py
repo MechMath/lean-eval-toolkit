@@ -28,6 +28,15 @@ class _RetryableModelError(ModelError):
     """A transient model API failure that may succeed on another request."""
 
 
+class GenerationFormatError(ModelError):
+    """A response was received but no usable Lean candidate could be extracted."""
+
+    def __init__(self, message: str, raw_content: str, usage: dict[str, int]):
+        super().__init__(message)
+        self.raw_content = raw_content
+        self.usage = usage
+
+
 @dataclass(slots=True)
 class Generation:
     content: str
@@ -166,15 +175,17 @@ class OpenAICompatibleClient:
         if not raw_content.strip():
             reasoning = message.get("reasoning_content")
             reasoning_chars = len(reasoning) if isinstance(reasoning, str) else 0
-            raise ModelError(
+            raise GenerationFormatError(
                 "model returned an empty final response "
                 f"(finish_reason={choice.get('finish_reason')!r}, "
-                f"reasoning_chars={reasoning_chars})"
+                f"reasoning_chars={reasoning_chars})",
+                raw_content,
+                usage,
             )
         try:
             extracted = self.test_template.extract(raw_content, repair=repair_round > 0)
         except TestTemplateError as exc:
-            raise ModelError(str(exc)) from exc
+            raise GenerationFormatError(str(exc), raw_content, usage) from exc
         return Generation(
             content=extracted.code,
             raw_content=raw_content,

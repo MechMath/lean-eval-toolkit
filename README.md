@@ -217,6 +217,29 @@ results/<UTC timestamp>-<model>/
 Completed attempts are appended immediately, so useful results survive an interrupted run. API
 keys are never written to these artifacts.
 
+Each `results.jsonl` row is one independent attempt/trajectory. Its ordered `rounds` array stores
+`round` (zero-based), `raw_response`, extracted `candidate`, `extraction_strategy`,
+`used_extraction_fallback`, `verification` (including Lean diagnostics), `feedback` sent to the
+next round, `usage`,
+`generation_ms`, `verification_ms`, and any `error_stage`/`error`. The attempt-level candidate,
+pass status, usage, and timing fields remain for compatibility; attempt timing is cumulative across
+rounds, while attempt usage describes the final generated response. A trajectory stops at its first
+passing round. Format or service errors stop it with a recorded error. `run.json` records the test
+template ID, repair budget, feedback role, model serving settings, chat template, and AXLE settings
+without API keys.
+
+`summary.json` keeps `pass_at_k` as an alias of `final_pass_at_k`. `direct_pass_at_1` and
+`direct_pass_at_k` use only round 0; `final_pass_at_1` and `final_pass_at_k` count any successful
+round. `@1` uses attempt 1 for each problem; `@k` uses any of the configured independent attempts.
+Each pass rate divides solved problems by the number of problems. The summary also reports
+`problems_solved_before_repair`, `additional_problems_solved_after_repair`, average/maximum repair
+rounds entered per trajectory, and `success_by_round`. Each round entry counts trajectories that
+reached that round and those first solved there; its success, strict-format, and fallback rates
+divide by trajectories reached. Failed generations remain in that denominator. Round entries sum
+generation/verification milliseconds and prompt/completion tokens; summary totals aggregate all
+trajectories, with average latency per trajectory. With `max_repair_rounds=0`, direct and final
+metrics coincide and the existing pass@k interpretation is unchanged.
+
 ## Adding or updating datasets
 
 List supported layouts and normalize a custom source:
