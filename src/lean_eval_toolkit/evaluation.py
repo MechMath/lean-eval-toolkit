@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -95,6 +96,31 @@ class EvaluationSummary:
         return asdict(self)
 
 
+_LEAN_ERROR_PREFIX = re.compile(r"^[^\n]*\berror(?:\([^)]*\))?:[ \t]*")
+
+
+def _repair_feedback(verification: Verification) -> str:
+    """Match the compiler feedback shape used by the repair training examples."""
+    diagnostics = [
+        *verification.lean_errors,
+        *verification.failed_declarations,
+        *verification.tool_errors,
+    ]
+    if verification.candidate_statement_changed:
+        diagnostics.insert(
+            0,
+            "The candidate statement differs from the benchmark. Keep the original "
+            "declaration and revise only its proof.",
+        )
+    if not diagnostics:
+        diagnostics = ["Lean verification failed."]
+    formatted = []
+    for diagnostic in diagnostics:
+        message = _LEAN_ERROR_PREFIX.sub("", diagnostic.strip(), count=1)
+        formatted.append(f"type: error, msg: {message}")
+    return "Lean compiler feedback:\n\n" + "\n".join(formatted)
+
+
 async def _one_attempt(
     problem: LeanProblem,
     attempt: int,
@@ -178,19 +204,7 @@ async def _one_attempt(
                 if template is None:
                     raise ValueError("repair requires a generator with a test_template")
                 messages = template.render(problem)
-            diagnostics = [
-                *verification.lean_errors,
-                *verification.failed_declarations,
-                *verification.tool_errors,
-            ]
-            if verification.candidate_statement_changed:
-                diagnostics.insert(
-                    0,
-                    "The candidate statement differs from the benchmark. Keep the original "
-                    "declaration and revise only its proof.",
-                )
-            feedback = "\n".join(diagnostics) if diagnostics else "Lean verification failed."
-            round_result.feedback = f"Lean compiler feedback:\n\n{feedback}"
+            round_result.feedback = _repair_feedback(verification)
             messages = [
                 *messages,
                 {"role": "assistant", "content": generation.raw_content},

@@ -114,12 +114,15 @@ async def test_repair_keeps_full_history_and_stops_on_success(feedback_role: str
     assert generator.calls[1] == [
         *generator.calls[0],
         {"role": "assistant", "content": failed_raw},
-        {"role": feedback_role, "content": "Lean compiler feedback:\n\nunknown tactic 'fail'"},
+        {
+            "role": feedback_role,
+            "content": "Lean compiler feedback:\n\ntype: error, msg: unknown tactic 'fail'",
+        },
     ]
     assert results[0].passed
     assert [item.raw_response for item in results[0].rounds] == [failed_raw, passed_raw]
     assert results[0].rounds[0].feedback == (
-        "Lean compiler feedback:\n\nunknown tactic 'fail'"
+        "Lean compiler feedback:\n\ntype: error, msg: unknown tactic 'fail'"
     )
     assert results[0].rounds[1].extraction_strategy == "strict_revised_lean_proof"
 
@@ -176,6 +179,46 @@ async def test_repair_feedback_flags_changed_statement_after_axle_failure() -> N
     assert generator.history is not None
     assert "candidate statement differs" in generator.history[-1]["content"]
     assert "type mismatch" in generator.history[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_repair_feedback_normalizes_axle_errors_without_losing_goal_state() -> None:
+    class RepairGenerator:
+        test_template = load_test_template("lean-plan-repair-v3")
+        history: list[dict[str, str]] | None = None
+
+        async def generate(
+            self, task: LeanProblem, *, messages: list[dict[str, str]] | None = None,
+            repair_round: int = 0,
+        ) -> Generation:
+            if messages is not None:
+                self.history = messages
+            return Generation(content="bad", raw_content="raw")
+
+    class FailingVerifier:
+        async def verify(self, task: LeanProblem, candidate: str) -> Verification:
+            return Verification(
+                passed=False,
+                okay=False,
+                lean_errors=[
+                    "-:5:11-5:12: error: unexpected token '!'\n  ⊢ False",
+                    "-:6:2-6:17: error(lean.unknownIdentifier): Unknown constant `foo`",
+                ],
+            )
+
+    generator = RepairGenerator()
+    results, _ = await evaluate(
+        problems()[:1], generator, FailingVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=1,
+    )
+    assert generator.history is not None
+    assert generator.history[-1]["content"] == (
+        "Lean compiler feedback:\n\n"
+        "type: error, msg: unexpected token '!'\n  ⊢ False\n"
+        "type: error, msg: Unknown constant `foo`"
+    )
+    assert results[0].rounds[0].verification is not None
+    assert results[0].rounds[0].verification["lean_errors"][0].startswith("-:5:11")
 
 
 @pytest.mark.asyncio
