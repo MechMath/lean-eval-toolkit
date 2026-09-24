@@ -71,6 +71,13 @@ evaluation:
   test_template: lean-cot-v1  # built-in ID or YAML path
 ```
 
+For v3 Plan-and-Repair checkpoints, select `evaluation.test_template: lean-plan-repair-v3`
+(the bundled WuProver config selects it). Its initial user message asks for a proof plan followed
+by the completed theorem declaration, with the formal statement in a `lean4` fence and no
+repeated imports. The strict response format is `### Proof Plan`, then `### Lean Proof` with a
+closed, terminal `lean4` fence. Relaxed extraction remains available, and each result records
+the selected strategy and fallback flag. `lean-cot-v1` remains available for older checkpoints.
+
 A custom test-template YAML maps named placeholders to normalized JSONL fields:
 
 ```yaml

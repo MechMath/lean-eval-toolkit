@@ -68,6 +68,12 @@ evaluation:
   test_template: lean-cot-v1  # 内置 ID 或 YAML 文件路径
 ```
 
+v3 Plan-and-Repair 模型应选用 `evaluation.test_template: lean-plan-repair-v3`（附带的 WuProver
+配置已选用）。初始用户消息要求先给证明计划，再给完整定理声明；题目置于 `lean4` 代码块中，
+回复不重复 imports。严格回复格式依次为 `### Proof Plan` 与 `### Lean Proof`，后者包含
+闭合且位于结尾的 `lean4` 代码块。宽松解析仍可作为降级路径，结果会记录解析策略及是否降级。
+旧模型可继续使用 `lean-cot-v1`。
+
 自定义测试模板通过 `fields` 将规范化 JSONL 字段映射到占位符：
 
 ```yaml

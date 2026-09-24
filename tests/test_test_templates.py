@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from lean_eval_toolkit.config import load_settings
 from lean_eval_toolkit.datasets import LeanProblem
 from lean_eval_toolkit.test_templates import TestTemplateError, load_test_template
 
@@ -132,3 +133,49 @@ def test_extraction_falls_back_for_noncanonical_responses(
 def test_extraction_rejects_unrecognisable_text() -> None:
     with pytest.raises(TestTemplateError, match="did not match"):
         load_test_template("lean-cot-v1").extract("I could not solve this problem.")
+
+
+def test_v3_prompt_and_primary_extractor(problem: LeanProblem) -> None:
+    template = load_test_template("lean-plan-repair-v3")
+    assert template.render(problem) == [{
+        "role": "user",
+        "content": (
+            "Complete the following Lean 4 theorem. Return a proof plan followed by the "
+            "completed theorem declaration. Do not repeat imports.\n\n"
+            "```lean4\nimport Mathlib\ntheorem demo : True := by sorry\n```"
+        ),
+    }]
+    result = template.extract(
+        "### Proof Plan\n\nUse trivial.\n\n### Lean Proof\n\n"
+        "```lean4\ntheorem demo : True := by trivial\n```"
+    )
+    assert result.code == "theorem demo : True := by trivial\n"
+    assert result.strategy == "strict_lean_proof"
+    assert not result.used_fallback
+
+
+@pytest.mark.parametrize("heading", ["### proof plan", "### Revised Proof Plan", "### Wrong Plan"])
+def test_v3_malformed_plan_uses_fallback(heading: str) -> None:
+    response = (
+        f"{heading}\n\nUse trivial.\n\n### Lean Proof\n\n"
+        "```lean4\ntheorem demo : True := by trivial\n```"
+    )
+    result = load_test_template("lean-plan-repair-v3").extract(response)
+    assert result.used_fallback
+    assert result.strategy == "relaxed_lean_proof"
+
+
+def test_v3_unterminated_fence_is_rejected() -> None:
+    response = (
+        "### Proof Plan\n\nUse trivial.\n\n### Lean Proof\n\n"
+        "```lean4\ntheorem demo : True := by trivial"
+    )
+    with pytest.raises(TestTemplateError, match="did not match"):
+        load_test_template("lean-plan-repair-v3").extract(response)
+
+
+def test_wuprover_selects_v3_template() -> None:
+    config = Path(__file__).parents[1] / "src/lean_eval_toolkit/conf/wuprover.yaml"
+    assert load_settings(config_path=config, env_file=None).evaluation.test_template == (
+        "lean-plan-repair-v3"
+    )

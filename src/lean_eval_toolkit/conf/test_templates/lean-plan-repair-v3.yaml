@@ -1,0 +1,43 @@
+schema_version: 1
+id: lean-plan-repair-v3
+fields:
+  formal_statement:
+    source: formal_statement
+    transforms: [rstrip]
+messages:
+  - role: user
+    content: |-
+      Complete the following Lean 4 theorem. Return a proof plan followed by the completed theorem declaration. Do not repeat imports.
+
+      ```lean4
+      ${formal_statement}
+      ```
+output:
+  primary:
+    type: section_fenced_code
+    name: strict_lean_proof
+    heading: "### Lean Proof"
+    required_headings: ["### Proof Plan"]
+    languages: [lean4]
+    require_terminal: true
+    case_sensitive: true
+  fallbacks:
+    - type: section_fenced_code_relaxed
+      name: relaxed_lean_proof
+      heading: "### Lean Proof"
+      languages: [lean4]
+      case_sensitive: false
+    - type: last_fenced_code
+      name: final_lean4_fence
+      languages: [lean4]
+      case_sensitive: false
+    - type: last_fenced_code
+      name: final_lean_or_unlabelled_fence
+      languages: [lean, "lean 4", ""]
+      case_sensitive: false
+    - type: section_raw_lean
+      name: raw_lean_after_proof_heading
+      heading: "### Lean Proof"
+      case_sensitive: false
+    - type: raw_lean
+      name: raw_lean

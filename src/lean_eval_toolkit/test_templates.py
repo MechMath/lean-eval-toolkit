@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 BUILTIN_TEST_TEMPLATE_DIR = Path(__file__).with_name("conf") / "test_templates"
 BUILTIN_TEST_TEMPLATES = {
     "lean-cot-v1": BUILTIN_TEST_TEMPLATE_DIR / "lean-cot-v1.yaml",
+    "lean-plan-repair-v3": BUILTIN_TEST_TEMPLATE_DIR / "lean-plan-repair-v3.yaml",
 }
 
 
