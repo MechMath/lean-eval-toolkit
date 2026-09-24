@@ -121,6 +121,15 @@ def _repair_feedback(verification: Verification) -> str:
     return "Lean compiler feedback:\n\n" + "\n".join(formatted)
 
 
+def _format_feedback() -> str:
+    return (
+        "Lean compiler feedback:\n\n"
+        "type: error, msg: The previous response did not contain a complete Lean proof. "
+        "Return a ### Revised Proof Plan, then exactly one ### Lean Proof section "
+        "with the original theorem in a closed ```lean4 code fence."
+    )
+
+
 async def _one_attempt(
     problem: LeanProblem,
     attempt: int,
@@ -152,10 +161,8 @@ async def _one_attempt(
                         problem, messages=messages, repair_round=round_index
                     )
             except Exception as exc:  # noqa: BLE001 - preserve failed trajectory
-                result.error_stage = "generation"
-                result.error = f"{type(exc).__name__}: {exc}"
-                round_result.error_stage = result.error_stage
-                round_result.error = result.error
+                round_result.error_stage = "generation"
+                round_result.error = f"{type(exc).__name__}: {exc}"
                 if isinstance(exc, GenerationFormatError):
                     round_result.raw_response = exc.raw_content
                     round_result.usage = exc.usage
@@ -165,6 +172,28 @@ async def _one_attempt(
                     result.finish_reason = exc.finish_reason
                 round_result.generation_ms = round((time.perf_counter() - started) * 1000)
                 result.generation_ms += round_result.generation_ms
+                if (
+                    isinstance(exc, GenerationFormatError)
+                    and exc.finish_reason == "stop"
+                    and exc.raw_content.strip()
+                    and round_index < max_repair_rounds
+                ):
+                    if messages is None:
+                        template = getattr(generator, "test_template", None)
+                        if template is None:
+                            raise ValueError(
+                                "repair requires a generator with a test_template"
+                            ) from exc
+                        messages = template.render(problem)
+                    round_result.feedback = _format_feedback()
+                    messages = [
+                        *messages,
+                        {"role": "assistant", "content": exc.raw_content},
+                        {"role": repair_feedback_role, "content": round_result.feedback},
+                    ]
+                    continue
+                result.error_stage = round_result.error_stage
+                result.error = round_result.error
                 break
             round_result.generation_ms = round((time.perf_counter() - started) * 1000)
             result.generation_ms += round_result.generation_ms

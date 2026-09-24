@@ -295,6 +295,63 @@ async def test_format_error_preserves_raw_response_and_usage() -> None:
 
 
 @pytest.mark.asyncio
+async def test_completed_format_error_uses_repair_round() -> None:
+    class MalformedThenCorrect:
+        test_template = load_test_template("lean-plan-repair-v3")
+
+        def __init__(self) -> None:
+            self.history: list[dict[str, str]] | None = None
+
+        async def generate(
+            self, task: LeanProblem, *, messages: list[dict[str, str]] | None = None,
+            repair_round: int = 0,
+        ) -> Generation:
+            if repair_round == 0:
+                raise GenerationFormatError(
+                    "no closed Lean fence", "### Lean Proof\n```lean44\n", {}, "stop"
+                )
+            self.history = messages
+            return Generation(
+                content=task.formal_statement.replace("sorry", "trivial"),
+                raw_content="### Revised Proof Plan\n...\n### Lean Proof\n```lean4\n...\n```",
+            )
+
+    generator = MalformedThenCorrect()
+    results, summary = await evaluate(
+        problems()[:1], generator, FakeVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=2,
+    )
+    assert results[0].passed
+    assert summary.additional_problems_solved_after_repair == 1
+    assert [item.error_stage for item in results[0].rounds] == ["generation", None]
+    assert results[0].error_stage is None
+    assert generator.history is not None
+    assert generator.history[-2] == {"role": "assistant", "content": "### Lean Proof\n```lean44\n"}
+    assert generator.history[-1]["role"] == "tool"
+    assert "closed ```lean4 code fence" in generator.history[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_truncated_format_error_does_not_consume_repair_rounds() -> None:
+    class Truncated:
+        test_template = load_test_template("lean-plan-repair-v3")
+        calls = 0
+
+        async def generate(self, task: LeanProblem) -> Generation:
+            self.calls += 1
+            raise GenerationFormatError("truncated", "rfl\n" * 100, {}, "length")
+
+    generator = Truncated()
+    results, _ = await evaluate(
+        problems()[:1], generator, FakeVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=2,
+    )
+    assert generator.calls == 1
+    assert len(results[0].rounds) == 1
+    assert results[0].error_stage == "generation"
+
+
+@pytest.mark.asyncio
 async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
     settings = load_settings(
         env_file=None,
