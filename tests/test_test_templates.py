@@ -179,3 +179,4 @@ def test_wuprover_selects_v3_template() -> None:
     settings = load_settings(config_path=config, env_file=None)
     assert settings.evaluation.test_template == "lean-plan-repair-v3"
     assert settings.model.max_tokens == 8192
+    assert settings.model.extra_body["chat_template_kwargs"] == {"enable_thinking": False}

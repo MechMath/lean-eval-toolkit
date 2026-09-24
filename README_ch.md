@@ -89,6 +89,14 @@ WuProver 配置现以 `model.max_tokens: 8192` 起步。Stage 3 样本中最长�
 输出反复耗尽上限时，单纯增大上限不能解决循环生成，还需核对服务端 chat template 与
 thinking 模式。
 
+WuProver 配置还通过 `model.extra_body.chat_template_kwargs.enable_thinking: false` 向每次
+vLLM 聊天请求传入 no-think 开关。这是请求级 tokenizer 模板参数，不是替换整个模板的
+`model.chat_template`，也不是评测测试模板。只有服务端实际加载的 chat template 支持
+`enable_thinking` 时此开关才会改变渲染；固定 non-thinking 模板本身没有可切换的模式。
+Qwen3-Coder-Next-Base 本来就是 non-thinking，传入此参数不会改变它的模板。
+若要让其他客户端也默认 no-think，需要在启动 vLLM 时传入
+`--default-chat-template-kwargs '{"enable_thinking": false}'`。
+
 自定义测试模板通过 `fields` 将规范化 JSONL 字段映射到占位符：
 
 ```yaml

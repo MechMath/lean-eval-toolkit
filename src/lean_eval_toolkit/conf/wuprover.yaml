@@ -8,7 +8,12 @@ model:
   max_retries: 2
   max_tokens: 8192
   temperature: 1.0
-  extra_body: {"top_p":0.95}
+  # Passed to vLLM with every chat completion request. This controls switchable
+  # Qwen3 templates; Qwen3-Coder-Next is already non-thinking and ignores it.
+  extra_body:
+    top_p: 0.95
+    chat_template_kwargs:
+      enable_thinking: false
   extra_headers: {}
 
 axle:

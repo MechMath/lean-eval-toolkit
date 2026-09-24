@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -174,6 +176,30 @@ async def test_repair_request_sends_history_and_uses_revised_heading(problem: Le
     ) as client:
         result = await client.generate(problem, messages=history, repair_round=1)
     assert result.extraction_strategy == "strict_revised_lean_proof"
+
+
+@pytest.mark.asyncio
+async def test_wuprover_request_disables_thinking_in_chat_template_kwargs(
+    problem: LeanProblem,
+) -> None:
+    config = Path(__file__).parents[1] / "src/lean_eval_toolkit/conf/wuprover.yaml"
+    settings = load_settings(config_path=config, env_file=None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = __import__("json").loads(request.content)
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+        assert body["top_p"] == 0.95
+        assert body["max_tokens"] == 8192
+        return httpx.Response(200, json={"choices": [{"message": {"content": (
+            "### Proof Plan\nUse trivial.\n### Lean Proof\n"
+            "```lean4\ntheorem demo : True := by trivial\n```"
+        )}}]})
+
+    async with OpenAICompatibleClient(
+        settings, transport=httpx.MockTransport(handler)
+    ) as client:
+        result = await client.generate(problem)
+    assert result.extraction_strategy == "strict_lean_proof"
 
 
 @pytest.mark.asyncio

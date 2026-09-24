@@ -96,6 +96,14 @@ responses that failed extraction all reached the previous 30,000-token limit. Se
 limit does not resolve repetitive generations; check the serving chat template and thinking mode
 when responses repeatedly run to the limit.
 
+The WuProver config also sends `model.extra_body.chat_template_kwargs.enable_thinking: false` in
+each vLLM chat request. This is a request-level tokenizer-template setting, distinct from
+`model.chat_template` (a complete replacement template) and from the evaluation test template.
+It takes effect only if the serving model's chat template supports `enable_thinking`; a fixed
+non-thinking template has no switch to toggle. Qwen3-Coder-Next-Base is non-thinking already, so
+the flag does not change its template. A vLLM-wide default for other clients must be set
+when starting vLLM with `--default-chat-template-kwargs '{"enable_thinking": false}'`.
+
 A custom test-template YAML maps named placeholders to normalized JSONL fields:
 
 ```yaml
