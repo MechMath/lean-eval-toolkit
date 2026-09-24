@@ -4,6 +4,7 @@ import pytest
 from lean_eval_toolkit.config import load_settings
 from lean_eval_toolkit.datasets import LeanProblem
 from lean_eval_toolkit.model import (
+    GenerationFormatError,
     ModelError,
     OpenAICompatibleClient,
     build_prompt,
@@ -262,3 +263,5 @@ async def test_reports_empty_reasoning_response_without_exposing_reasoning(
         with pytest.raises(ModelError, match=r"finish_reason='length'.*reasoning_chars=24") as exc:
             await client.generate(problem)
     assert "private chain" not in str(exc.value)
+    assert isinstance(exc.value, GenerationFormatError)
+    assert exc.value.finish_reason == "length"

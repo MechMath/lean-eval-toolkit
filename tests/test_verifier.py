@@ -58,6 +58,131 @@ async def test_axle_pass_requires_no_failed_declarations(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+async def test_declaration_only_candidate_inherits_source_preamble(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **_: object):
+            pass
+
+        async def verify_proof(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return _successful_response()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("lean_eval_toolkit.verifier.AxleClient", FakeClient)
+    settings = load_settings(env_file=None)
+    statement = (
+        "import Mathlib\n\nopen scoped Nat\n\n"
+        "theorem factorial_scope_smoke : 3! = 6 := by\n  sorry\n"
+    )
+    candidate = "theorem factorial_scope_smoke : 3! = 6 := by\n  decide\n"
+    problem = LeanProblem(
+        id="factorial_scope_smoke", dataset="manual",
+        formal_statement=statement, environment="lean-4.30.0",
+    )
+    async with AxleVerifier(settings) as verifier:
+        result = await verifier.verify(problem, candidate)
+    assert result.passed
+    assert captured["formal_statement"] == statement
+    assert captured["content"] == "import Mathlib\n\nopen scoped Nat\n\n" + candidate
+    assert result.applied_preamble == "import Mathlib\n\nopen scoped Nat\n\n"
+
+
+@pytest.mark.asyncio
+async def test_changed_statement_is_recorded_without_overriding_axle_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **_: object):
+            pass
+
+        async def verify_proof(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return _successful_response()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("lean_eval_toolkit.verifier.AxleClient", FakeClient)
+    problem = LeanProblem(
+        id="demo", dataset="manual", environment="lean-4.30.0",
+        formal_statement="import Mathlib\ntheorem demo (n : Nat) : n = n := by sorry",
+    )
+    async with AxleVerifier(load_settings(env_file=None)) as verifier:
+        result = await verifier.verify(
+            problem, "theorem demo (n : Nat) : n + 1 = n + 1 := by rfl"
+        )
+    assert result.passed
+    assert result.candidate_statement_changed
+    assert "n + 1 = n + 1" in captured["content"]
+
+
+@pytest.mark.asyncio
+async def test_source_context_works_when_record_id_differs_from_theorem_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **_: object):
+            pass
+
+        async def verify_proof(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return _successful_response()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("lean_eval_toolkit.verifier.AxleClient", FakeClient)
+    problem = LeanProblem(
+        id="record-1", dataset="manual", environment="lean-4.30.0",
+        formal_statement="import Mathlib\nopen scoped Nat\ntheorem actual : 3! = 6 := by sorry",
+    )
+    async with AxleVerifier(load_settings(env_file=None)) as verifier:
+        result = await verifier.verify(problem, "theorem actual : 3! = 6 := by decide")
+    assert result.passed
+    assert captured["content"].startswith("import Mathlib\nopen scoped Nat\n\n")
+
+
+@pytest.mark.asyncio
+async def test_candidate_with_its_own_preamble_is_not_duplicated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **_: object):
+            pass
+
+        async def verify_proof(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return _successful_response()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("lean_eval_toolkit.verifier.AxleClient", FakeClient)
+    problem = LeanProblem(
+        id="demo", dataset="manual", environment="lean-4.30.0",
+        formal_statement="import Mathlib\nopen scoped Nat\ntheorem demo : 3! = 6 := by sorry",
+    )
+    candidate = "open scoped Nat\ntheorem demo : 3! = 6 := by decide"
+    async with AxleVerifier(load_settings(env_file=None)) as verifier:
+        result = await verifier.verify(problem, candidate)
+    assert result.passed
+    assert result.applied_preamble is None
+    assert captured["content"] == candidate
+
+
+@pytest.mark.asyncio
 async def test_retries_axle_server_error(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = 0
 

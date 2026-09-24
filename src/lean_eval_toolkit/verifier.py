@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -26,6 +27,41 @@ _RETRYABLE_AXLE_ERRORS = (
     AxleRateLimitedError,
     AxleRuntimeError,
 )
+_NAMED_DECLARATION_RE = re.compile(
+    r"(?ms)^[ \t]*(?:theorem|lemma)\s+(?P<name>[A-Za-z0-9_'.]+)\b"
+    r"(?P<signature>.*?)\s*:=\s*by\b"
+)
+
+
+def _named_declaration(source: str, name: str) -> re.Match[str] | None:
+    return next(
+        (match for match in _NAMED_DECLARATION_RE.finditer(source) if match["name"] == name),
+        None,
+    )
+
+
+def _normalized_signature(match: re.Match[str]) -> str:
+    return re.sub(r"\s+", "", match["signature"])
+
+
+def _candidate_for_axle(problem: LeanProblem, candidate: str) -> tuple[str, str | None, bool]:
+    """Supply source context to declaration-only candidates and note changed targets."""
+    target = _named_declaration(problem.formal_statement, problem.id)
+    if target is None:
+        declarations = list(_NAMED_DECLARATION_RE.finditer(problem.formal_statement))
+        if len(declarations) != 1:
+            return candidate, None, False
+        target = declarations[0]
+    declaration = _named_declaration(candidate, target["name"])
+    changed_statement = declaration is not None and (
+        _normalized_signature(declaration) != _normalized_signature(target)
+    )
+    if declaration is None or candidate[: declaration.start()].strip():
+        return candidate, None, changed_statement
+    preamble = problem.formal_statement[: target.start()]
+    if not preamble.strip():
+        return candidate, None, changed_statement
+    return preamble.rstrip() + "\n\n" + candidate.lstrip(), preamble, changed_statement
 
 
 @dataclass(slots=True)
@@ -39,6 +75,8 @@ class Verification:
     tool_warnings: list[str] = field(default_factory=list)
     timings: dict[str, int] = field(default_factory=dict)
     info: dict[str, Any] | None = None
+    applied_preamble: str | None = None
+    candidate_statement_changed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -72,9 +110,10 @@ class AxleVerifier:
                 f"problem {problem.id!r} has no Lean environment; add an `environment` field, "
                 "a lean-toolchain file, or AXLE_ENVIRONMENT fallback"
             )
+        content, preamble, changed_statement = _candidate_for_axle(problem, candidate)
         request = {
             "formal_statement": problem.formal_statement,
-            "content": candidate,
+            "content": content,
             "environment": environment,
             # Never permit benchmark placeholders in a successful candidate.
             "permitted_sorries": [],
@@ -109,4 +148,6 @@ class AxleVerifier:
             tool_warnings=result.tool_messages.warnings,
             timings=result.timings,
             info=result.info,
+            applied_preamble=preamble,
+            candidate_statement_changed=changed_statement,
         )

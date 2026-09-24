@@ -89,6 +89,13 @@ reject tool messages without structured tool calls. The v3 template expects
 errors stop the trajectory, while transport retries remain separate from repair rounds. The
 default repair budget is zero, preserving one-shot behavior.
 
+The WuProver config starts with `model.max_tokens: 8192`. In the sampled Stage 3 run, the longest
+passing response used 4,477 completion tokens and the longest extractable response used 6,635;
+responses that failed extraction all reached the previous 30,000-token limit. Set
+`MODEL_MAX_TOKENS` explicitly if another config or environment override is in use. Increasing the
+limit does not resolve repetitive generations; check the serving chat template and thinking mode
+when responses repeatedly run to the limit.
+
 A custom test-template YAML maps named placeholders to normalized JSONL fields:
 
 ```yaml
@@ -218,7 +225,7 @@ Completed attempts are appended immediately, so useful results survive an interr
 keys are never written to these artifacts.
 
 Each `results.jsonl` row is one independent attempt/trajectory. Its ordered `rounds` array stores
-`round` (zero-based), `raw_response`, extracted `candidate`, `extraction_strategy`,
+`round` (zero-based), `raw_response`, `finish_reason`, extracted `candidate`, `extraction_strategy`,
 `used_extraction_fallback`, `verification` (including Lean diagnostics), `feedback` sent to the
 next round, `usage`,
 `generation_ms`, `verification_ms`, and any `error_stage`/`error`. The attempt-level candidate,
@@ -262,14 +269,22 @@ counts, extraction date, transformation notes, and SHA-256 digest.
 
 ## Verification rule
 
-The untouched benchmark source is passed to AXLE as `formal_statement`; the model candidate is
-passed as `content`, with `permitted_sorries=[]`. A result passes only when AXLE returns
+The untouched benchmark source is passed to AXLE as `formal_statement`; the extracted candidate,
+with the benchmark preamble added when needed, is passed as `content`, with
+`permitted_sorries=[]`. A result passes only when AXLE returns
 `okay = true` and an empty `failed_declarations` list. Candidate Lean code is sent to the model API
 and AXLE but is never executed locally.
 
 Candidates should contain the completed target declaration only. The benchmark
 `formal_statement` supplies imports, options, namespaces, and the proof hole; repeating that
-preamble in `content` is unnecessary. To check this contract against a live AXLE service, set
+preamble in the model response is unnecessary. For declaration-only candidates, the verifier
+prepends the benchmark preamble to AXLE `content`, so scoped notation such as `Nat` factorial
+parses in the same context; the original extracted candidate remains unchanged in results.
+`verification.applied_preamble` records the inserted text. A changed, recognizable named theorem
+statement is flagged in `verification.candidate_statement_changed`; if AXLE rejects it, repair
+feedback asks the model
+to restore the original declaration. AXLE remains the authority for pass/fail, including
+definitionally equivalent statements. To check this contract against a live AXLE service, set
 `AXLE_API_KEY` (or configure it in `.env`) and run
 `AXLE_INTEGRATION=1 uv run pytest tests/test_axle_integration.py`. The checked fixture covers a
 declaration-only success and rejection of a changed signature, `sorry`, a tactic without its import, and a

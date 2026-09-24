@@ -6,7 +6,7 @@ model:
   name: Wuprover
   timeout_seconds: 3000
   max_retries: 2
-  max_tokens: 30000
+  max_tokens: 8192
   temperature: 1.0
   extra_body: {"top_p":0.95}
   extra_headers: {}

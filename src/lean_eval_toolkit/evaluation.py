@@ -30,6 +30,7 @@ class Verifier(Protocol):
 class RoundResult:
     round: int
     raw_response: str | None = None
+    finish_reason: str | None = None
     candidate: str | None = None
     extraction_strategy: str | None = None
     used_extraction_fallback: bool = False
@@ -132,8 +133,10 @@ async def _one_attempt(
                 if isinstance(exc, GenerationFormatError):
                     round_result.raw_response = exc.raw_content
                     round_result.usage = exc.usage
+                    round_result.finish_reason = exc.finish_reason
                     result.raw_response = exc.raw_content
                     result.usage = exc.usage
+                    result.finish_reason = exc.finish_reason
                 round_result.generation_ms = round((time.perf_counter() - started) * 1000)
                 result.generation_ms += round_result.generation_ms
                 break
@@ -143,6 +146,7 @@ async def _one_attempt(
             result.raw_response = generation.raw_content
             round_result.candidate = generation.content
             round_result.raw_response = generation.raw_content
+            round_result.finish_reason = generation.finish_reason
             result.finish_reason = generation.finish_reason
             result.usage = generation.usage
             round_result.usage = generation.usage
@@ -179,6 +183,12 @@ async def _one_attempt(
                 *verification.failed_declarations,
                 *verification.tool_errors,
             ]
+            if verification.candidate_statement_changed:
+                diagnostics.insert(
+                    0,
+                    "The candidate statement differs from the benchmark. Keep the original "
+                    "declaration and revise only its proof.",
+                )
             feedback = "\n".join(diagnostics) if diagnostics else "Lean verification failed."
             round_result.feedback = f"Lean compiler feedback:\n\n{feedback}"
             messages = [

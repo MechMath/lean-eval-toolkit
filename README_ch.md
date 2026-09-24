@@ -83,6 +83,12 @@ v3 Plan-and-Repair 模型应选用 `evaluation.test_template: lean-plan-repair-v
 要求 `### Revised Proof Plan`。证明通过立即停止；格式或服务错误终止当前轨迹，传输重试与
 修复轮数相互独立。默认修复预算为零，保持单次生成行为。
 
+WuProver 配置现以 `model.max_tokens: 8192` 起步。Stage 3 样本中最长的通过回复使用了
+4477 个 completion tokens，最长的可提取回复使用了 6635 个；无法提取的回复均达到先前
+30000 token 的上限。若其他配置或环境变量覆盖此值，可显式设置 `MODEL_MAX_TOKENS`。
+输出反复耗尽上限时，单纯增大上限不能解决循环生成，还需核对服务端 chat template 与
+thinking 模式。
+
 自定义测试模板通过 `fields` 将规范化 JSONL 字段映射到占位符：
 
 ```yaml
@@ -203,7 +209,7 @@ results/<UTC 时间>-<模型名>/
 每次尝试完成后会立即追加结果，因此中断不会丢失已经完成的记录。API key 不会写入产物。
 
 `results.jsonl` 每行是一条独立尝试/轨迹。按顺序排列的 `rounds` 包含从 0 开始的 `round`、
-`raw_response`、提取后的 `candidate`、`extraction_strategy`、`used_extraction_fallback`、
+`raw_response`、`finish_reason`、提取后的 `candidate`、`extraction_strategy`、`used_extraction_fallback`、
 含 Lean 诊断的 `verification`、传给下一轮的 `feedback`、`usage`、`generation_ms`、
 `verification_ms` 及错误字段。
 尝试顶层仍保留候选、通过状态、用量和耗时等兼容字段；顶层耗时为各轮总和，顶层用量为最后一次
@@ -241,12 +247,17 @@ uv run lean-eval datasets import path/to/tasks \
 
 ## 验证规则
 
-未经修改的原题作为 AXLE `verify_proof` 的 `formal_statement`，模型候选作为 `content`，并设置
+未经修改的原题作为 AXLE `verify_proof` 的 `formal_statement`，提取的候选按需补齐前导代码后
+作为 `content`，并设置
 `permitted_sorries=[]`。只有 AXLE 返回 `okay = true` 且 `failed_declarations` 为空时才通过。
 候选 Lean 代码只发送给模型 API 与 AXLE，不会在本机执行。
 
 候选只需包含完成后的目标声明。基准题的 `formal_statement` 提供 imports、options、命名空间和
-证明空位；`content` 无需重复这些前导代码。设置 `AXLE_API_KEY`（或在 `.env` 中配置），运行
+证明空位；模型回复无需重复这些前导代码。对仅包含声明的候选，验证器会在发送给 AXLE 的
+`content` 前自动补齐原题前导代码，使 `open scoped Nat` 等记法能正常解析；结果中的原始候选
+保持不变。`verification.applied_preamble` 记录所补文本。若可识别的命名定理声明被改写，
+`verification.candidate_statement_changed` 会标记；AXLE 拒绝后，修复反馈会提示恢复原题。
+是否通过仍由 AXLE 判定，包括与原题定义等价的声明。设置 `AXLE_API_KEY`（或在 `.env` 中配置），运行
 `AXLE_INTEGRATION=1 uv run pytest tests/test_axle_integration.py` 可用真实 AXLE 检查此约定。
 仓库中的固定样例覆盖仅提交声明时通过，以及修改签名、保留 `sorry`、缺少 tactic 的 import、仅提交
 tactic 主体时被拒绝。

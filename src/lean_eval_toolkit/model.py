@@ -31,10 +31,17 @@ class _RetryableModelError(ModelError):
 class GenerationFormatError(ModelError):
     """A response was received but no usable Lean candidate could be extracted."""
 
-    def __init__(self, message: str, raw_content: str, usage: dict[str, int]):
+    def __init__(
+        self,
+        message: str,
+        raw_content: str,
+        usage: dict[str, int],
+        finish_reason: str | None = None,
+    ):
         super().__init__(message)
         self.raw_content = raw_content
         self.usage = usage
+        self.finish_reason = finish_reason
 
 
 @dataclass(slots=True)
@@ -181,11 +188,14 @@ class OpenAICompatibleClient:
                 f"reasoning_chars={reasoning_chars})",
                 raw_content,
                 usage,
+                choice.get("finish_reason"),
             )
         try:
             extracted = self.test_template.extract(raw_content, repair=repair_round > 0)
         except TestTemplateError as exc:
-            raise GenerationFormatError(str(exc), raw_content, usage) from exc
+            raise GenerationFormatError(
+                str(exc), raw_content, usage, choice.get("finish_reason")
+            ) from exc
         return Generation(
             content=extracted.code,
             raw_content=raw_content,

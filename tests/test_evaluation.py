@@ -148,6 +148,37 @@ async def test_repair_does_not_retry_generation_or_verifier_errors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repair_feedback_flags_changed_statement_after_axle_failure() -> None:
+    class ChangedGenerator:
+        test_template = load_test_template("lean-plan-repair-v3")
+        history: list[dict[str, str]] | None = None
+
+        async def generate(
+            self, task: LeanProblem, *, messages: list[dict[str, str]] | None = None,
+            repair_round: int = 0,
+        ) -> Generation:
+            if messages is not None:
+                self.history = messages
+            return Generation(content="theorem one : False := by trivial", raw_content="raw")
+
+    class ChangedVerifier:
+        async def verify(self, task: LeanProblem, candidate: str) -> Verification:
+            return Verification(
+                passed=False, okay=False, candidate_statement_changed=True,
+                lean_errors=["type mismatch"],
+            )
+
+    generator = ChangedGenerator()
+    await evaluate(
+        problems()[:1], generator, ChangedVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=1,
+    )
+    assert generator.history is not None
+    assert "candidate statement differs" in generator.history[-1]["content"]
+    assert "type mismatch" in generator.history[-1]["content"]
+
+
+@pytest.mark.asyncio
 async def test_mixed_repair_summary_and_round_usage() -> None:
     class MixedGenerator:
         test_template = load_test_template("lean-plan-repair-v3")
@@ -206,13 +237,17 @@ async def test_mixed_repair_summary_and_round_usage() -> None:
 async def test_format_error_preserves_raw_response_and_usage() -> None:
     class BadFormat:
         async def generate(self, task: LeanProblem) -> Generation:
-            raise GenerationFormatError("bad format", "raw malformed", {"prompt_tokens": 7})
+            raise GenerationFormatError(
+                "bad format", "raw malformed", {"prompt_tokens": 7}, "length"
+            )
 
     results, summary = await evaluate(
         problems()[:1], BadFormat(), FakeVerifier(), attempts=1, concurrency=1,
     )
     assert results[0].rounds[0].raw_response == "raw malformed"
     assert results[0].rounds[0].usage == {"prompt_tokens": 7}
+    assert results[0].rounds[0].finish_reason == "length"
+    assert results[0].finish_reason == "length"
     assert summary.total_prompt_tokens == 7
 
 

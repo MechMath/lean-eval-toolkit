@@ -45,3 +45,22 @@ async def test_theorem_only_verification(candidate_key: str, expected_pass: bool
     async with AxleVerifier(settings) as verifier:
         result = await verifier.verify(problem, FIXTURE[candidate_key])
     assert result.passed is expected_pass, result.to_dict()
+
+
+@pytest.mark.asyncio
+async def test_scoped_notation_is_available_to_declaration_only_candidate() -> None:
+    settings = load_settings()
+    if not settings.axle.api_key.get_secret_value():
+        pytest.skip("AXLE_API_KEY is required for AXLE integration")
+    problem = LeanProblem(
+        id="factorial_scope_smoke", dataset="integration", environment="lean-4.30.0",
+        formal_statement=(
+            "import Mathlib\n\nopen scoped Nat\n\n"
+            "theorem factorial_scope_smoke : 3! = 6 := by\n  sorry\n"
+        ),
+    )
+    async with AxleVerifier(settings) as verifier:
+        result = await verifier.verify(
+            problem, "theorem factorial_scope_smoke : 3! = 6 := by\n  decide\n"
+        )
+    assert result.passed, result.to_dict()

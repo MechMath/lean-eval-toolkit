@@ -176,6 +176,6 @@ def test_v3_unterminated_fence_is_rejected() -> None:
 
 def test_wuprover_selects_v3_template() -> None:
     config = Path(__file__).parents[1] / "src/lean_eval_toolkit/conf/wuprover.yaml"
-    assert load_settings(config_path=config, env_file=None).evaluation.test_template == (
-        "lean-plan-repair-v3"
-    )
+    settings = load_settings(config_path=config, env_file=None)
+    assert settings.evaluation.test_template == "lean-plan-repair-v3"
+    assert settings.model.max_tokens == 8192
