@@ -1,0 +1,9 @@
+{
+  "formal_statement": "import Mathlib\n\ntheorem theorem_only_smoke (n : Nat) : n = n := by\n  sorry\n",
+  "passing": "theorem theorem_only_smoke (n : Nat) : n = n := by\n  rfl\n",
+  "signature_changed": "theorem theorem_only_smoke (n : Nat) : n + 1 = n + 1 := by\n  rfl\n",
+  "unresolved_sorry": "theorem theorem_only_smoke (n : Nat) : n = n := by\n  sorry\n",
+  "missing_import_formal_statement": "theorem theorem_only_smoke (n : Nat) : n = n := by\n  sorry\n",
+  "missing_import": "theorem theorem_only_smoke (n : Nat) : n = n := by\n  positivity\n",
+  "tactic_body_only": "rfl\n"
+}

@@ -226,6 +226,14 @@ passed as `content`, with `permitted_sorries=[]`. A result passes only when AXLE
 `okay = true` and an empty `failed_declarations` list. Candidate Lean code is sent to the model API
 and AXLE but is never executed locally.
 
+Candidates should contain the completed target declaration only. The benchmark
+`formal_statement` supplies imports, options, namespaces, and the proof hole; repeating that
+preamble in `content` is unnecessary. To check this contract against a live AXLE service, set
+`AXLE_API_KEY` (or configure it in `.env`) and run
+`AXLE_INTEGRATION=1 uv run pytest tests/test_axle_integration.py`. The checked fixture covers a
+declaration-only success and rejection of a changed signature, `sorry`, a tactic without its import, and a
+tactic body without a declaration.
+
 ## Development and validation record
 
 ```bash

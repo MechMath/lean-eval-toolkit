@@ -52,6 +52,7 @@ async def test_axle_pass_requires_no_failed_declarations(monkeypatch: pytest.Mon
     assert result.passed
     assert captured["api_key"] == "axle-secret"
     assert captured["formal_statement"] == problem.formal_statement
+    assert captured["content"] == "theorem demo : True := by trivial"
     assert captured["environment"] == "lean-4.26.0"
     assert captured["permitted_sorries"] == []
 

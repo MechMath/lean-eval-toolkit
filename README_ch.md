@@ -213,6 +213,12 @@ uv run lean-eval datasets import path/to/tasks \
 `permitted_sorries=[]`。只有 AXLE 返回 `okay = true` 且 `failed_declarations` 为空时才通过。
 候选 Lean 代码只发送给模型 API 与 AXLE，不会在本机执行。
 
+候选只需包含完成后的目标声明。基准题的 `formal_statement` 提供 imports、options、命名空间和
+证明空位；`content` 无需重复这些前导代码。设置 `AXLE_API_KEY`（或在 `.env` 中配置），运行
+`AXLE_INTEGRATION=1 uv run pytest tests/test_axle_integration.py` 可用真实 AXLE 检查此约定。
+仓库中的固定样例覆盖仅提交声明时通过，以及修改签名、保留 `sorry`、缺少 tactic 的 import、仅提交
+tactic 主体时被拒绝。
+
 ## 开发与验证记录
 
 ```bash
