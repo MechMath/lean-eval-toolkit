@@ -109,8 +109,8 @@ def _repair_feedback(verification: Verification) -> str:
     if verification.candidate_statement_changed:
         diagnostics.insert(
             0,
-            "The candidate statement differs from the benchmark. Keep the original "
-            "declaration and revise only its proof.",
+            "The candidate statement differs from the benchmark or the required "
+            "declaration is missing. Keep the original declaration and revise only its proof.",
         )
     if not diagnostics:
         diagnostics = ["Lean verification failed."]

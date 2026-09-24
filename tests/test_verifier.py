@@ -125,6 +125,30 @@ async def test_changed_statement_is_recorded_without_overriding_axle_result(
 
 
 @pytest.mark.asyncio
+async def test_missing_target_declaration_is_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeClient:
+        def __init__(self, **_: object):
+            pass
+
+        async def verify_proof(self, **_: object) -> object:
+            return _successful_response()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("lean_eval_toolkit.verifier.AxleClient", FakeClient)
+    problem = LeanProblem(
+        id="demo", dataset="manual", environment="lean-4.30.0",
+        formal_statement="theorem demo : True := by sorry",
+    )
+    async with AxleVerifier(load_settings(env_file=None)) as verifier:
+        result = await verifier.verify(problem, "theorem other : True := by trivial")
+    assert result.candidate_statement_changed
+
+
+@pytest.mark.asyncio
 async def test_source_context_works_when_record_id_differs_from_theorem_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

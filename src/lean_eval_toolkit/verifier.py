@@ -53,7 +53,7 @@ def _candidate_for_axle(problem: LeanProblem, candidate: str) -> tuple[str, str 
             return candidate, None, False
         target = declarations[0]
     declaration = _named_declaration(candidate, target["name"])
-    changed_statement = declaration is not None and (
+    changed_statement = declaration is None or (
         _normalized_signature(declaration) != _normalized_signature(target)
     )
     if declaration is None or candidate[: declaration.start()].strip():
