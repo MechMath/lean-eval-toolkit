@@ -80,14 +80,23 @@ the selected strategy and fallback flag. `lean-cot-v1` remains available for old
 
 To evaluate compiler-feedback repair, set `evaluation.max_repair_rounds` (or
 `--max-repair-rounds`) above zero. Each of the `evaluation.attempts` samples remains an independent
-trajectory with at most `1 + max_repair_rounds` generations. After a Lean proof failure, the
+trajectory with at most `1 + max_repair_rounds` proof rounds. After a Lean proof failure, the
 toolkit appends the assistant's raw response and a `tool` message containing
 `Lean compiler feedback:\n\n<diagnostics>`, then sends the full history for the next generation.
 Set `evaluation.repair_feedback_role: user` (or `--repair-feedback-role user`) for backends that
 reject tool messages without structured tool calls. The v3 template expects
-`### Revised Proof Plan` on repair turns. Successful proofs stop immediately; format and service
-errors stop the trajectory, while transport retries remain separate from repair rounds. The
-default repair budget is zero, preserving one-shot behavior.
+`### Revised Proof Plan` on repair turns. Successful proofs stop immediately. A completed but
+malformed response can use a repair turn to request the required output format. Service errors
+stop the trajectory, while transport retries remain separate from repair rounds. The default
+repair budget is zero, preserving one-shot behavior.
+
+Set `evaluation.max_truncation_retries` (or `--max-truncation-retries`) to retry a response that
+reaches `model.max_tokens` without a parseable proof. Each retry resends the same prompt without
+the truncated text, is recorded under `generation_retries` in the round result, and does not use
+a Lean repair round. The WuProver config allows one such retry per round; the general default is
+zero. The maximum number of model requests per trajectory is
+`(1 + max_repair_rounds) * (1 + max_truncation_retries)`. These retries increase model requests
+and may still produce another truncated response.
 
 The WuProver config starts with `model.max_tokens: 8192`. In the sampled Stage 3 run, the longest
 passing response used 4,477 completion tokens and the longest extractable response used 6,635;

@@ -352,6 +352,85 @@ async def test_truncated_format_error_does_not_consume_repair_rounds() -> None:
 
 
 @pytest.mark.asyncio
+async def test_truncated_generation_is_retried_before_lean_repair() -> None:
+    class RetryGenerator:
+        test_template = load_test_template("lean-plan-repair-v3")
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, list[dict[str, str]] | None]] = []
+
+        async def generate(
+            self, task: LeanProblem, *, messages: list[dict[str, str]] | None = None,
+            repair_round: int = 0,
+        ) -> Generation:
+            self.calls.append((repair_round, messages))
+            if len(self.calls) == 1:
+                raise GenerationFormatError(
+                    "truncated", "rfl\n" * 100, {"prompt_tokens": 2, "completion_tokens": 8},
+                    "length",
+                )
+            if repair_round == 0:
+                return Generation(
+                    content="theorem one : True := by fail", raw_content="initial proof",
+                    usage={"prompt_tokens": 3, "completion_tokens": 4},
+                )
+            return Generation(
+                content="theorem one : True := by trivial", raw_content="revised proof",
+                usage={"prompt_tokens": 5, "completion_tokens": 6},
+            )
+
+    class RepairVerifier:
+        async def verify(self, task: LeanProblem, candidate: str) -> Verification:
+            passed = "trivial" in candidate
+            return Verification(
+                passed=passed, okay=passed,
+                lean_errors=[] if passed else ["unknown tactic 'fail'"],
+            )
+
+    generator = RetryGenerator()
+    results, summary = await evaluate(
+        problems()[:1], generator, RepairVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=1, max_truncation_retries=1,
+    )
+    assert results[0].passed
+    assert [call[0] for call in generator.calls] == [0, 0, 1]
+    assert generator.calls[0][1] is generator.calls[1][1] is None
+    assert generator.calls[2][1] is not None
+    assert len(results[0].rounds) == 2
+    retry = results[0].rounds[0].generation_retries[0]
+    assert retry.finish_reason == "length"
+    assert retry.raw_response == "rfl\n" * 100
+    assert summary.total_prompt_tokens == 10
+    assert summary.total_completion_tokens == 18
+    assert summary.success_by_round[0]["prompt_tokens"] == 5
+    assert summary.success_by_round[1]["prompt_tokens"] == 5
+
+
+@pytest.mark.asyncio
+async def test_exhausted_truncation_retry_is_recorded() -> None:
+    class AlwaysTruncated:
+        calls = 0
+
+        async def generate(self, task: LeanProblem) -> Generation:
+            self.calls += 1
+            raise GenerationFormatError(
+                "truncated", f"loop {self.calls}", {"completion_tokens": 8}, "length"
+            )
+
+    generator = AlwaysTruncated()
+    results, summary = await evaluate(
+        problems()[:1], generator, FakeVerifier(), attempts=1, concurrency=1,
+        max_repair_rounds=2, max_truncation_retries=1,
+    )
+    assert generator.calls == 2
+    assert len(results[0].rounds) == 1
+    assert results[0].rounds[0].generation_retries[0].raw_response == "loop 1"
+    assert results[0].rounds[0].raw_response == "loop 2"
+    assert results[0].error_stage == "generation"
+    assert summary.total_completion_tokens == 16
+
+
+@pytest.mark.asyncio
 async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
     settings = load_settings(
         env_file=None,
@@ -383,6 +462,7 @@ async def test_run_writer_streams_results_and_summary(tmp_path: Path) -> None:
     assert manifest["test_template_id"] == "lean-cot-v1"
     assert manifest["max_repair_rounds"] == 0
     assert manifest["repair_feedback_role"] == "tool"
+    assert manifest["max_truncation_retries"] == 0
     assert manifest["model_temperature"] == settings.model.temperature
     saved = json.loads(writer.results_path.read_text(encoding="utf-8"))
     assert saved["rounds"][0]["verification"]["passed"]

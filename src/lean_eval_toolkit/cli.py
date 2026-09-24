@@ -114,6 +114,7 @@ async def _run_evaluation(
             concurrency=settings.evaluation.concurrency,
             max_repair_rounds=settings.evaluation.max_repair_rounds,
             repair_feedback_role=settings.evaluation.repair_feedback_role,
+            max_truncation_retries=settings.evaluation.max_truncation_retries,
             on_result=lambda result: _append_and_report(writer, report, result),
         )
     writer.write_summary(summary)
@@ -167,6 +168,10 @@ def run_evaluation(
     repair_feedback_role: Annotated[
         str | None, typer.Option(help="Feedback message role: tool or user.")
     ] = None,
+    max_truncation_retries: Annotated[
+        int | None,
+        typer.Option(min=0, help="Fresh retries after a generation reaches its token limit."),
+    ] = None,
 ) -> None:
     """Generate remote-model proofs and verify them with AXLE."""
     try:
@@ -201,6 +206,8 @@ def run_evaluation(
         settings.evaluation.max_repair_rounds = max_repair_rounds
     if repair_feedback_role is not None:
         settings.evaluation.repair_feedback_role = repair_feedback_role
+    if max_truncation_retries is not None:
+        settings.evaluation.max_truncation_retries = max_truncation_retries
     total = len(problems) * settings.evaluation.attempts
     with Progress(console=console) as progress:
         task = progress.add_task("Starting evaluation", total=total)

@@ -32,3 +32,4 @@ evaluation:
   test_template: lean-plan-repair-v3
   max_repair_rounds: 2
   repair_feedback_role: tool
+  max_truncation_retries: 1

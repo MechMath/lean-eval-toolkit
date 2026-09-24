@@ -28,6 +28,15 @@ class Verifier(Protocol):
 
 
 @dataclass(slots=True)
+class GenerationRetry:
+    raw_response: str
+    finish_reason: str | None
+    usage: dict[str, int]
+    error: str
+    generation_ms: int
+
+
+@dataclass(slots=True)
 class RoundResult:
     round: int
     raw_response: str | None = None
@@ -39,6 +48,7 @@ class RoundResult:
     feedback: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
     generation_ms: int = 0
+    generation_retries: list[GenerationRetry] = field(default_factory=list)
     verification_ms: int = 0
     error_stage: str | None = None
     error: str | None = None
@@ -130,6 +140,38 @@ def _format_feedback() -> str:
     )
 
 
+async def _generate_with_truncation_retries(
+    problem: LeanProblem,
+    generator: Generator,
+    messages: list[dict[str, str]] | None,
+    round_index: int,
+    max_truncation_retries: int,
+    round_result: RoundResult,
+) -> Generation:
+    for retry_index in range(max_truncation_retries + 1):
+        started = time.perf_counter()
+        try:
+            if round_index == 0:
+                return await generator.generate(problem)
+            assert messages is not None
+            return await generator.generate(
+                problem, messages=messages, repair_round=round_index
+            )
+        except GenerationFormatError as exc:
+            if exc.finish_reason != "length" or retry_index == max_truncation_retries:
+                raise
+            round_result.generation_retries.append(
+                GenerationRetry(
+                    raw_response=exc.raw_content,
+                    finish_reason=exc.finish_reason,
+                    usage=exc.usage,
+                    error=f"{type(exc).__name__}: {exc}",
+                    generation_ms=round((time.perf_counter() - started) * 1000),
+                )
+            )
+    raise AssertionError("unreachable")
+
+
 async def _one_attempt(
     problem: LeanProblem,
     attempt: int,
@@ -139,6 +181,7 @@ async def _one_attempt(
     on_result: Callable[[AttemptResult], Awaitable[None]] | None,
     max_repair_rounds: int,
     repair_feedback_role: str,
+    max_truncation_retries: int,
 ) -> AttemptResult:
     result = AttemptResult(
         problem_id=problem.id,
@@ -153,13 +196,10 @@ async def _one_attempt(
             result.rounds.append(round_result)
             started = time.perf_counter()
             try:
-                if round_index == 0:
-                    generation = await generator.generate(problem)
-                else:
-                    assert messages is not None
-                    generation = await generator.generate(
-                        problem, messages=messages, repair_round=round_index
-                    )
+                generation = await _generate_with_truncation_retries(
+                    problem, generator, messages, round_index,
+                    max_truncation_retries, round_result,
+                )
             except Exception as exc:  # noqa: BLE001 - preserve failed trajectory
                 round_result.error_stage = "generation"
                 round_result.error = f"{type(exc).__name__}: {exc}"
@@ -256,18 +296,19 @@ async def evaluate(
     concurrency: int,
     max_repair_rounds: int = 0,
     repair_feedback_role: str = "tool",
+    max_truncation_retries: int = 0,
     on_result: Callable[[AttemptResult], Awaitable[None]] | None = None,
 ) -> tuple[list[AttemptResult], EvaluationSummary]:
     """Generate and verify all attempts without failing the whole run on one error."""
-    if attempts < 1 or concurrency < 1 or max_repair_rounds < 0:
-        raise ValueError("attempts and concurrency must be positive; repair rounds nonnegative")
+    if attempts < 1 or concurrency < 1 or max_repair_rounds < 0 or max_truncation_retries < 0:
+        raise ValueError("attempts and concurrency must be positive; retry rounds nonnegative")
     if repair_feedback_role not in {"tool", "user"}:
         raise ValueError("repair_feedback_role must be tool or user")
     semaphore = asyncio.Semaphore(concurrency)
     tasks = [
         _one_attempt(
             problem, attempt, generator, verifier, semaphore, on_result,
-            max_repair_rounds, repair_feedback_role,
+            max_repair_rounds, repair_feedback_role, max_truncation_retries,
         )
         for problem in problems
         for attempt in range(1, attempts + 1)
@@ -289,6 +330,11 @@ async def evaluate(
     denominator = len(problems)
     round_stats: list[dict[str, int | float]] = []
     all_rounds = [item for result in results for item in result.rounds]
+    def round_tokens(item: RoundResult, key: str) -> int:
+        return item.usage.get(key, 0) + sum(
+            retry.usage.get(key, 0) for retry in item.generation_retries
+        )
+
     for index in range(max_repair_rounds + 1):
         current = [item for item in all_rounds if item.round == index]
         reached = len(current)
@@ -308,8 +354,8 @@ async def evaluate(
             "extraction_fallback_rate": fallback / reached if reached else 0.0,
             "generation_ms": sum(item.generation_ms for item in current),
             "verification_ms": sum(item.verification_ms for item in current),
-            "prompt_tokens": sum(item.usage.get("prompt_tokens", 0) for item in current),
-            "completion_tokens": sum(item.usage.get("completion_tokens", 0) for item in current),
+            "prompt_tokens": sum(round_tokens(item, "prompt_tokens") for item in current),
+            "completion_tokens": sum(round_tokens(item, "completion_tokens") for item in current),
         })
     total_generation_ms = sum(result.generation_ms for result in results)
     total_verification_ms = sum(result.verification_ms for result in results)
@@ -336,8 +382,8 @@ async def evaluate(
         ),
         total_generation_ms=total_generation_ms,
         total_verification_ms=total_verification_ms,
-        total_prompt_tokens=sum(item.usage.get("prompt_tokens", 0) for item in all_rounds),
-        total_completion_tokens=sum(item.usage.get("completion_tokens", 0) for item in all_rounds),
+        total_prompt_tokens=sum(round_tokens(item, "prompt_tokens") for item in all_rounds),
+        total_completion_tokens=sum(round_tokens(item, "completion_tokens") for item in all_rounds),
         average_generation_ms_per_trajectory=(
             total_generation_ms / len(results) if results else 0.0
         ),
@@ -386,6 +432,7 @@ class RunWriter:
             "test_template_id": load_test_template(settings.evaluation.test_template).id,
             "max_repair_rounds": settings.evaluation.max_repair_rounds,
             "repair_feedback_role": settings.evaluation.repair_feedback_role,
+            "max_truncation_retries": settings.evaluation.max_truncation_retries,
             "model_chat_template": settings.model.chat_template,
             "model_temperature": settings.model.temperature,
             "model_max_tokens": settings.model.max_tokens,

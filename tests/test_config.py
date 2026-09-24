@@ -23,6 +23,14 @@ def test_settings_can_be_populated_from_environment(monkeypatch: pytest.MonkeyPa
     assert settings.retry.backoff_seconds == 0.25
     assert settings.evaluation.results_dir == Path("artifacts")
     assert settings.evaluation.test_template == "lean-cot-v1"
+    assert settings.evaluation.max_truncation_retries == 0
+
+
+def test_wuprover_enables_one_fresh_retry_after_truncation() -> None:
+    config = DEFAULT_CONFIG_PATH.with_name("wuprover.yaml")
+    settings = load_settings(config_path=config, env_file=None)
+
+    assert settings.evaluation.max_truncation_retries == 1
 
 
 def test_model_name_is_only_required_when_model_is_used() -> None:

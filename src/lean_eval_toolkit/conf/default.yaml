@@ -31,3 +31,4 @@ evaluation:
   test_template: lean-cot-v1
   max_repair_rounds: 0
   repair_feedback_role: tool
+  max_truncation_retries: 0

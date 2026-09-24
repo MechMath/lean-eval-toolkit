@@ -52,6 +52,8 @@ def test_run_command_wires_dataset_and_cli_overrides(
             "lean-4.28.0",
             "--concurrency",
             "1",
+            "--max-truncation-retries",
+            "2",
             "--results-dir",
             str(tmp_path),
         ],
@@ -65,6 +67,7 @@ def test_run_command_wires_dataset_and_cli_overrides(
     assert problem.environment == "lean-4.28.0"
     assert captured["environment_override"] == "lean-4.28.0"
     assert captured["settings"].evaluation.attempts == 2
+    assert captured["settings"].evaluation.max_truncation_retries == 2
 
 
 def test_run_command_explains_missing_model_name(

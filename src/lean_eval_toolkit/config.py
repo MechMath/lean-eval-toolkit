@@ -57,6 +57,7 @@ class EvaluationSettings(BaseModel):
     test_template: str = "lean-cot-v1"
     max_repair_rounds: int = Field(default=0, ge=0)
     repair_feedback_role: Literal["tool", "user"] = "tool"
+    max_truncation_retries: int = Field(default=0, ge=0)
 
 
 class DatasetSettings(BaseModel):
@@ -110,6 +111,7 @@ _ENV_PATHS = {
     "EVAL_TEST_TEMPLATE": "evaluation.test_template",
     "EVAL_MAX_REPAIR_ROUNDS": "evaluation.max_repair_rounds",
     "EVAL_REPAIR_FEEDBACK_ROLE": "evaluation.repair_feedback_role",
+    "EVAL_MAX_TRUNCATION_RETRIES": "evaluation.max_truncation_retries",
 }
 _JSON_ENV_VARS = {"MODEL_EXTRA_BODY", "MODEL_EXTRA_HEADERS"}
 _OPTIONAL_ENV_VARS = {"MODEL_NAME", "MODEL_CHAT_TEMPLATE", "AXLE_ENVIRONMENT"}
